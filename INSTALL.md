@@ -1,33 +1,122 @@
-# Installing on her MacBook
+# Installation plan
 
-Plan for ~10 minutes sitting at her machine. Do it yourself rather than talking
-her through it — the only genuinely fiddly part is GitHub authentication, and
-that is much faster done than explained.
+End-to-end: your machine → GitHub → her MacBook → proving the update loop works.
+
+**Budget ~30 minutes**, of which ~10 are at her Mac. Do it in one sitting; the
+last phase needs both machines reachable.
+
+| Phase | Where | Time |
+|---|---|---|
+| 1. Prepare and publish the repo | Your machine | 10 min |
+| 2. Choose how her Mac gets the code | Decision | 2 min |
+| 3. Install on her Mac | Her machine | 10 min |
+| 4. Prove updates actually reach her | Both | 5 min |
+| 5. Hand over | Her machine | 2 min |
 
 ---
 
-## Step 0 — decide how her Mac gets the code
+## Before you start
 
-A private repo requires credentials on her machine. Pick one:
-
-### Option A — make the repo public (simplest)
-
-There is nothing sensitive in it. No API keys, no resume, no personal data —
-`data/` and `logs/` are gitignored, so only code and a list of company names
-ever reach GitHub. Nothing in the repo identifies her.
+**On your machine**, confirm the GitHub CLI is installed and logged in:
 
 ```bash
-gh repo edit --visibility public
+gh auth status
 ```
 
+If that errors, run `gh auth login` (choose HTTPS, authenticate in the browser).
+If `gh` isn't installed at all: https://cli.github.com
+
+**On her Mac**, nothing to pre-install. Setup accepts the Python that macOS
+already ships, and proves it works rather than assuming. Homebrew is only needed
+in the unlikely case that check fails.
+
+---
+
+## Phase 1 — Prepare and publish the repo
+
+Everything here is on **your** machine, in the project folder.
+
+### 1.1 Turn on the safety gate
+
+```bash
+git config core.hooksPath scripts/githooks
+```
+
+This blocks any push where the shell scripts don't parse or the tests fail.
+There is no CI — this hook is the only thing between a typo and her laptop.
+
+### 1.2 Confirm the working tree is clean and tests pass
+
+```bash
+git status --short && python -m pytest tests/ -q
+```
+
+### 1.3 Create the GitHub repo and push
+
+The branch is `master`. Nothing depends on the name, but note it — you'll want
+it when checking things on GitHub.
+
+```bash
+gh repo create meester --private --source=. --remote=origin --push
+```
+
+### 1.4 Confirm it landed
+
+```bash
+gh repo view --web
+```
+
+You should see `README.md` rendered, and **no `data/` folder**. If you see a
+`data/` folder, stop — her job-search data is being published. It shouldn't
+happen (`.gitignore` covers it) but it is worth the two seconds to look.
+
+### 1.5 Grab the clone URL
+
+```bash
+gh repo view --json sshUrl,url --jq '"SSH:   \(.sshUrl)\nHTTPS: \(.url).git"'
+```
+
+Keep both. Which one you use depends on the next decision.
+
+---
+
+## Phase 2 — Choose how her Mac gets the code
+
+A private repo needs credentials on her machine. Pick one and carry it into
+Phase 3.
+
+### Option A — make the repo public *(simplest, and fine)*
+
+```bash
+gh repo edit --visibility public --accept-visibility-change-consequences
+```
+
+There is nothing sensitive in the repo: no API keys, no resume, no personal
+data. `data/` and `logs/` are gitignored, so only code and a list of company
+names are ever published, and nothing in it identifies her.
+
 Her Mac then needs **no GitHub account, no login, no keys**, and auto-update
-keeps working forever. If you have no specific reason to keep it private, take
-this option and skip to Step 1.
+works forever. Use the **HTTPS** URL in Phase 3.
 
-### Option B — stay private, use a read-only deploy key (recommended if private)
+### Option B — stay private, read-only deploy key *(recommended if private)*
 
-Scoped to this one repo, read-only, and does **not** put your GitHub account
-credentials on her machine. Run these **on her Mac**:
+Scoped to this one repo, read-only, and it does **not** put your GitHub account
+on her machine. Three commands on her Mac plus one paste in a browser — steps are
+inline in Phase 3. Use the **SSH** URL.
+
+### Option C — stay private, log in as you
+
+Fastest to type, but it stores your credentials in her keychain and gives her
+machine access to every repo you own. Only pick this if that genuinely doesn't
+bother you. On her Mac you'd run `gh auth login` and use the HTTPS URL.
+
+---
+
+## Phase 3 — Install on her Mac
+
+Open **Terminal** (Cmd+Space → "terminal").
+
+### 3.1 Only if you chose Option B (deploy key)
 
 ```bash
 ssh-keygen -t ed25519 -f ~/.ssh/meester_deploy -N "" -C "meester-macbook"
@@ -37,127 +126,159 @@ ssh-keygen -t ed25519 -f ~/.ssh/meester_deploy -N "" -C "meester-macbook"
 cat ~/.ssh/meester_deploy.pub
 ```
 
-Copy that output, then in your browser open the repo → **Settings** → **Deploy
-keys** → **Add deploy key**, paste it, leave "Allow write access" **unchecked**,
-save.
-
-Then tell SSH to use it, still on her Mac:
+Copy that whole line. In a browser: your repo → **Settings** → **Deploy keys** →
+**Add deploy key**. Paste it, leave **"Allow write access" unchecked**, save.
 
 ```bash
 printf 'Host github.com\n  IdentityFile ~/.ssh/meester_deploy\n  IdentitiesOnly yes\n' >> ~/.ssh/config
 ```
 
-Use the **SSH** clone URL in Step 1 (`git@github.com:...`), not the HTTPS one.
+### 3.2 Clone
 
-### Option C — stay private, log in as you
-
-Fastest private option, but it stores *your* GitHub credentials in her keychain,
-granting her machine access to all your repos. Only do this if you are fine with
-that.
-
-```bash
-gh auth login
-```
-
----
-
-## Step 1 — clone it
-
-On her Mac, open **Terminal** (Cmd+Space, type "terminal").
-
-Public repo (Option A):
+Public (Option A or C):
 
 ```bash
 git clone https://github.com/YOUR-USERNAME/meester.git ~/Meester
 ```
 
-Private repo with a deploy key (Option B):
+Private with deploy key (Option B):
 
 ```bash
 git clone git@github.com:YOUR-USERNAME/meester.git ~/Meester
 ```
 
-> The very first `git` command may pop up a dialog offering to install the Xcode
-> Command Line Tools. Accept it, wait for it to finish, then run the clone again.
-> This is normal macOS behaviour and not an error.
+> The first `git` command may pop a dialog offering to install the Xcode Command
+> Line Tools. Accept it, wait, then run the clone again. This is normal, not an
+> error, and it is the single most likely thing to make you think something broke.
 
-## Step 2 — run setup
+### 3.3 Run setup
 
 ```bash
 cd ~/Meester && ./scripts/setup_mac.sh
 ```
 
-It will find a Python, build a virtualenv, install two dependencies, verify the
-job board tokens, and register the scheduled job. Expect it to take a couple of
-minutes, mostly on the board verification.
+It finds a Python, builds a virtualenv, installs two dependencies, **proves the
+interpreter can actually run Meester**, verifies the job board tokens, and
+registers the scheduled job. Two to three minutes, mostly board verification.
 
-If it stops with **"No Python 3.10 or newer found"**, install one and re-run:
+If it stops at the interpreter check, install a newer Python and re-run —
+the script is safe to repeat:
 
 ```bash
 brew install python@3.12
 ```
 
-And if `brew` itself is missing, install Homebrew first from https://brew.sh,
-then run the line above.
-
-## Step 3 — confirm it actually works before you walk away
-
-This is the step worth not skipping.
+### 3.4 Verify — don't skip this
 
 ```bash
 launchctl list | grep meester
 ```
 
-You want a line ending in `com.meester.harvest`. The middle column is the last
-exit code — `0` is good.
+Expect a line ending `com.meester.harvest`. The middle column is the last exit
+code; `0` is good.
 
 ```bash
 tail -20 ~/Meester/logs/harvest.log
 ```
 
-You want to see `harvest starting` and then `harvest ok`.
+Expect `harvest starting (code abc1234)` followed by `harvest ok`.
 
 ```bash
 ~/Meester/.venv/bin/python -m meester show --limit 20
 ```
 
-You want a list of real remote job postings. If you see those, it is working.
-
-## Step 4 — show her the two things she needs to know
-
-Everything else is your problem, not hers. She only needs:
-
-**To see what it found:**
-
-```bash
-open ~/Meester/data
-```
-
-(For now the data is a `.jsonl` file — readable but ugly. The Airtable view
-arrives with the scoring stage, and that is what she will actually use.)
-
-**To stop it:** create an empty file called `PAUSED` in the `Meester` folder in
-her home directory — she can do this in Finder, no Terminal needed. Deleting the
-file starts it again.
+Expect real remote job postings. If you see those, it works.
 
 ---
 
-## Afterwards
+## Phase 4 — Prove updates actually reach her
 
-You push changes from your machine; her copy runs `git pull --ff-only` before
-each harvest, so fixes arrive on their own. You should not need to touch her Mac
-again.
+The most valuable five minutes here, and the easiest to skip. If auto-update is
+silently broken you won't find out for weeks — and you already have one instance
+of exactly that failure mode in this repo's history.
 
-To check on it remotely, ask her to send you the last few lines of
-`~/Meester/logs/harvest.log`.
+**4.1** In a browser on her Mac, open the repo → `config/companies.yaml` → pencil
+icon. Add one line under `greenhouse:`:
 
-## If something breaks
+```yaml
+  - discord
+```
+
+Commit straight to `master` from the browser. (Using the web editor means you
+don't need your own laptop present.)
+
+**4.2** Note the new commit's short SHA on GitHub.
+
+**4.3** Back in her Terminal, force a run instead of waiting the hour:
+
+```bash
+bash ~/Meester/scripts/run_harvest.sh
+```
+
+**4.4** Check what happened:
+
+```bash
+tail -30 ~/Meester/logs/harvest.log
+```
+
+You are looking for three things:
+
+- `updated <old> -> <new>` — the pull worked
+- `re-verifying board tokens (companies.yaml changed)` — watchlist changes propagate
+- `harvest starting (code <new-sha>)` — matching the SHA from 4.2
+
+If all three appear, the update loop is proven and you should not need to touch
+her Mac again.
+
+---
+
+## Phase 5 — Hand over
+
+She needs to know exactly two things.
+
+**To stop it:** create an empty file named `PAUSED` in the `Meester` folder in
+her home directory — Finder is fine, no Terminal needed. Deleting it resumes.
+
+**Where results appear:** for now, `~/Meester/data/jobs.jsonl`. Be honest that
+it's a raw data file and unpleasant to read; the usable view arrives with the
+scoring stage. It may be better not to show her until then.
+
+Everything else is yours.
+
+---
+
+## Ongoing: pushing updates
+
+```bash
+git add -A && git commit -m "what changed" && git push
+```
+
+Her Mac pulls before every harvest, so changes land within the hour while the
+laptop is awake, otherwise on next wake.
+
+**Adding companies** — edit `config/companies.yaml`, commit, push. Her machine
+notices the file changed and re-verifies automatically.
+
+**Checking her version remotely** — ask for the last lines of
+`~/Meester/logs/harvest.log` and compare the logged SHA to `git log --oneline -1`.
+
+**If you push something broken** — `git revert HEAD && git push`. Her next run
+pulls the fix before executing, so Python breakage self-heals. The one exception
+is a syntax error in `scripts/*.sh`: bash dies before reaching the pull and the
+machine is stranded. That is precisely what the pre-push hook guards, which is
+why you enable it in Phase 1.
+
+---
+
+## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `bad interpreter: /bin/bash^M` | Windows line endings | Shouldn't happen — `.gitattributes` forces LF. If it does: `sed -i '' 's/\r$//' ~/Meester/scripts/*.sh` |
+| `xcrun: error: invalid active developer path` | Xcode CLT missing | Accept the install dialog, or `xcode-select --install` |
+| `Repository not found` | Private repo, auth incomplete | Redo Phase 2 |
+| `Permission denied (publickey)` | Deploy key not registered or SSH config missing | Recheck 3.1; confirm the key is on the repo, not your account |
 | `permission denied: ./scripts/setup_mac.sh` | Exec bit lost | `bash ~/Meester/scripts/setup_mac.sh` |
-| `Repository not found` | Private repo, auth not set up | Redo Step 0 |
-| Job listed but nothing in the log | Ran while asleep | Open the lid and wait a minute; `launchd` fires a catch-up run on wake |
-| Nothing runs at all | Job not registered | Re-run `./scripts/setup_mac.sh` — it is safe to repeat |
-| Want it gone entirely | | `~/Meester/scripts/uninstall_mac.sh` |
+| `bad interpreter: /bin/bash^M` | CRLF line endings | Shouldn't happen — `.gitattributes` forces LF. If it does: `sed -i '' 's/\r$//' ~/Meester/scripts/*.sh` |
+| Job is listed but the log is empty | It ran while asleep | Open the lid, wait a minute; launchd fires a catch-up run on wake |
+| Nothing runs at all | Job not registered | Re-run `./scripts/setup_mac.sh`, it is safe to repeat |
+| Remove it entirely | | `~/Meester/scripts/uninstall_mac.sh` |

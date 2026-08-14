@@ -15,20 +15,23 @@ die() { printf '\033[31m error:\033[0m %s\n' "$*" >&2; exit 1; }
 # --- 1. Python ----------------------------------------------------------------
 # macOS still ships an old system Python. Find a real one rather than silently
 # half-working on 3.9.
+# Prefer a newer interpreter if one is installed, but accept the 3.9 that macOS
+# ships. Whether 3.9 is genuinely good enough is decided empirically by the smoke
+# test below, not by trusting a version number here.
 find_python() {
-  for c in python3.13 python3.12 python3.11 python3.10 python3; do
+  for c in python3.13 python3.12 python3.11 python3.10 python3.9 python3; do
     command -v "$c" >/dev/null 2>&1 || continue
-    if "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null; then
+    if "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)' 2>/dev/null; then
       command -v "$c"; return 0
     fi
   done
   return 1
 }
 
-say "Looking for Python 3.10+"
+say "Looking for Python 3.9+"
 if ! PY_BIN="$(find_python)"; then
   echo
-  echo "  No Python 3.10 or newer found."
+  echo "  No Python 3.9 or newer found, which is surprising on a modern Mac."
   echo "  Install one, then run this script again:"
   echo
   echo "      brew install python@3.12"
@@ -49,6 +52,21 @@ shasum -a 256 "$REPO/requirements.txt" | cut -d' ' -f1 > "$REPO/.venv/.requireme
 say "Dependencies installed"
 
 chmod +x "$REPO/scripts/run_harvest.sh" "$REPO/scripts/uninstall_mac.sh" 2>/dev/null || true
+
+# --- 2b. Prove this interpreter actually works --------------------------------
+# Exercises one real path through every module. Catches a version incompatibility
+# now, at a keyboard, instead of silently at 3am in an unattended run.
+say "Checking this Python can run Meester"
+if ! "$REPO/.venv/bin/python" "$REPO/scripts/smoke_test.py"; then
+  echo
+  echo "  This Python cannot run Meester correctly."
+  echo "  Install a newer one and run this script again:"
+  echo
+  echo "      brew install python@3.12"
+  echo
+  echo "  (If you don't have Homebrew: https://brew.sh)"
+  exit 1
+fi
 
 # --- 3. Verify board tokens ---------------------------------------------------
 say "Verifying job board tokens (takes a minute)"
