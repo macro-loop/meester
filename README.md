@@ -1,0 +1,173 @@
+# Meester
+
+A job-application autopilot. Full design lives in the approved plan; this README
+covers what exists today and how to run it.
+
+**Built so far: Stage 2, Harvest.** It discovers remote roles straight from company
+ATS boards, classifies whether they are genuinely remote, dedupes across sources,
+and stores them idempotently. No applications are sent by any code in this repo.
+
+## Setup
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+## Use
+
+Probe every board token in `config/companies.yaml` and write a pruned list.
+Do this first, and again whenever you add companies:
+
+```bash
+python -m meester verify-companies --write
+```
+
+Fetch, filter, dedupe and store. `--dry-run` writes nothing:
+
+```bash
+python -m meester harvest --dry-run
+```
+
+```bash
+python -m meester harvest
+```
+
+```bash
+python -m meester show --limit 40
+```
+
+## Current numbers
+
+From a live run against 69 verified boards:
+
+```
+69 boards ok, 0 failed | 9953 raw -> 2476 remote -> 910 fresh -> 773 unique
+```
+
+Re-running immediately adds **0** rows.
+
+## Running it on her Mac
+
+Everything runs on her MacBook Air. Once, in Terminal:
+
+```bash
+git clone <your-private-repo-url> ~/Meester && cd ~/Meester && ./scripts/setup_mac.sh
+```
+
+That finds a suitable Python, builds a virtualenv, installs dependencies,
+verifies the board tokens, and registers a `launchd` job that runs hourly and
+once at every login. Re-running it is safe.
+
+| To do this | Run this |
+|---|---|
+| Pause everything | `touch ~/Meester/PAUSED` |
+| Resume | `rm ~/Meester/PAUSED` |
+| See what it found | `~/Meester/.venv/bin/python -m meester show --limit 40` |
+| Watch it work | `tail -f ~/Meester/logs/harvest.log` |
+| Confirm it's scheduled | `launchctl list \| grep meester` |
+| Remove it completely | `~/Meester/scripts/uninstall_mac.sh` |
+
+The pause switch is a file rather than a config flag on purpose: it can be
+created or deleted from Finder by someone who has never opened a terminal.
+
+**Sleep is the real constraint.** A closed MacBook Air suspends the timer.
+`launchd` fires one catch-up run on wake — which is why it is used instead of
+cron, which silently drops missed jobs — so in practice this harvests whenever
+the laptop is awake rather than strictly hourly. That erodes some of the
+timing edge over aggregators. To narrow the gap: keep it on the charger and turn
+on System Settings → Battery → Options → "Wake for network access". If the edge
+turns out to matter, moving *only* the harvest stage to a ~$5/mo box fixes it.
+
+**Updates.** She never edits code. You push to the private repo; the scheduled
+job runs `git pull --ff-only` before each harvest, so fixes arrive on their own.
+A diverged or broken pull logs and continues on the code already present rather
+than failing the run.
+
+**Her data never leaves her machine.** `data/` and `logs/` are gitignored, so
+postings, rejections, salary expectations and application evidence stay local.
+Only code moves through GitHub.
+
+**One upside of running it all on her Mac:** when the apply stage lands, it *has*
+to execute there anyway — her browser profile, her session cookies, her
+residential IP. Submitting from a datacenter would be the exact device
+fingerprint that spam screening looks for. So this choice costs some harvest
+freshness and buys the right execution environment for everything downstream.
+
+## Why it is built this way
+
+**Discovery is an API, submission is a browser.** Greenhouse's application-submit
+endpoint needs the *employer's* secret key and its docs warn it must never be
+exposed client-side; Ashby and Lever are the same. There is no applicant-facing
+apply API anywhere. So harvesting is clean structured JSON, and applying — later,
+in Stage 6 — has to be Playwright.
+
+**Company boards beat aggregators on timing.** A role appears on the employer's own
+board hours to days before an aggregator indexes it. Growing `companies.yaml` is
+the highest-leverage maintenance task in the system.
+
+**Board tokens must be verified, never assumed.** Of 121 hand-written seed tokens,
+69 resolved. Guessing `company-name` is right about 57% of the time.
+
+## Things that bit us, kept as tests
+
+Each of these was found by auditing live data against ground truth, not by
+reading code. All are covered in `tests/`.
+
+- **`isRemote` is not authoritative.** OpenAI publishes `isRemote: true` on 438 of
+  734 postings that are simultaneously `workplaceType: "Hybrid"`, located
+  "San Francisco", with no remote secondary location. Trusting the boolean
+  admitted 438 office jobs as remote from one employer alone. It is now treated
+  as corroborating evidence only. See `meester/harvest/ashby.py:_classify`.
+- **Ashby hides remote options in `secondaryLocations`.** Ramp lists roles as
+  "New York, NY (HQ)" with "Remote (US)" tucked into the secondaries. Reading only
+  the primary location silently discards real remote roles.
+- **Greenhouse `content` is double HTML-escaped.** The payload literally begins
+  `&lt;div class=&quot;`. One `html.unescape` yields HTML, not text. Skipping the
+  second pass feeds `&lt;p&gt;` soup to the scorer and quietly degrades every fit
+  score. See `meester/textutil.py`.
+- **`#` inside a `re.VERBOSE` pattern starts a comment.** An unescaped one turned
+  the last alternative of the title-cleaning regex into a bare `\s*`, which matched
+  the space in every title — "Backend Engineer" normalised to "backendengineer"
+  and unrelated roles began merging. See the note in `meester/models.py`.
+- **Do not union geography across separate postings.** One title posted once per
+  city on a single board is not one role open in every city. Merging them produced
+  a Datadog posting located "Lisbon, Portugal" advertised as open in five other
+  countries. Geography is only unioned across *different sources*.
+- **`\b` does not follow a trailing period.** `\bu\.s\.\b` never matches
+  "U.S. Remote", so a common US phrasing resolved to no country at all.
+
+## Layout
+
+```
+config/
+  settings.yaml           policy: concurrency, max age, accepted countries
+  companies.yaml          seed watchlist (unverified)
+  companies.verified.yaml generated by verify-companies
+meester/
+  models.py               Job model, company/title normalisation
+  remote.py               remote classification + country extraction
+  textutil.py             HTML -> text
+  dedupe.py               cross-source and same-board collapsing
+  store.py                idempotent JSONL store
+  harvest/                greenhouse.py lever.py ashby.py run.py base.py
+tests/                    31 tests, all offline
+```
+
+`data/` is gitignored and holds the local store.
+
+## Known limits
+
+- Bare two-letter state codes after a dash ("Remote - CA") stay unscoped on
+  purpose: about half the US state codes collide with ISO country codes
+  (CA/Canada, IN/India, IL/Israel). An unscoped remote role is accepted anyway
+  and gets pinned down at scoring, so a wrong country is the costlier error.
+- Only three ATSs are wired. Workday, iCIMS and Taleo are not, by design — the
+  paid tool covers that long tail.
+- Remote feeds (RemoteOK, Remotive, Himalayas, WWR, HN) are specified in the plan
+  but not implemented yet.
+
+## Next
+
+Stage 3, Score: deterministic gates first, then an LLM judge on survivors.
+Needs the intake profile and facts ledger, which need a session with the
+job seeker.

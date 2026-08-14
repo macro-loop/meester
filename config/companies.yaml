@@ -1,0 +1,138 @@
+# Watchlist of remote-friendly companies, keyed by ATS board token.
+#
+# This is a SEED list of candidates, not a verified one. Tokens are guesses based
+# on the usual `company-name` convention and many will be wrong or stale.
+# Run `python -m meester verify-companies` to probe every token and rewrite this
+# file with only the ones that actually resolve. Never trust an unverified token.
+#
+# The whole point of this list is timing: a role appears on the company's own
+# board hours-to-days before aggregators index it. Growing this list is the
+# single highest-leverage maintenance task in the system.
+
+greenhouse:
+  - anthropic
+  - gitlab
+  - stripe
+  - databricks
+  - figma
+  - cloudflare
+  - dropbox
+  - doordash
+  - robinhood
+  - coinbase
+  - reddit
+  - discord
+  - twilio
+  - hashicorp
+  - elastic
+  - mongodb
+  - datadog
+  - confluent
+  - grafanalabs
+  - samsara
+  - affirm
+  - instacart
+  - lyft
+  - pinterest
+  - squarespace
+  - asana
+  - benchling
+  - flexport
+  - gusto
+  - lattice
+  - mural
+  - patreon
+  - sourcegraph
+  - vimeo
+  - wealthfront
+  - zapier
+  - duolingo
+  - webflow
+  - airtable
+  - amplitude
+  - carta
+  - checkr
+  - chime
+  - clickup
+  - crowdstrike
+  - fastly
+  - hims
+  - mercury
+  - miro
+  - modernhealth
+  - motive
+  - newrelic
+  - nylas
+  - okta
+  - opendoor
+  - pagerduty
+  - postman
+  - rippling
+  - scaleai
+  - sentry
+  - snyk
+  - strava
+  - thumbtack
+  - udemy
+  - upwork
+  - wistia
+
+lever:
+  - matchgroup
+  - plaid
+  - brex
+  - ramp
+  - attentive
+  - alan
+  - shieldai
+  - kraken
+  - blockchain
+  - vercel
+  - netlify
+  - clari
+  - sardine
+  - fanduel
+  - spotify
+  - voleon
+  - wise
+  - cresta
+  - abnormal
+  - tala
+  - lucid
+  - nuro
+  - anduril
+  - applied-intuition
+  - pave
+  - hightouch
+
+ashby:
+  - ramp
+  - linear
+  - vercel
+  - replit
+  - deel
+  - clerk
+  - resend
+  - cursor
+  - together
+  - runway
+  - modal
+  - baseten
+  - supabase
+  - posthog
+  - railway
+  - render
+  - neon
+  - warp
+  - browserbase
+  - elevenlabs
+  - perplexityai
+  - sierra
+  - harvey
+  - watershed
+  - openai
+  - scale
+  - mistral
+  - cohere
+  - huggingface
+  - weightsandbiases

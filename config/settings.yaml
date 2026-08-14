@@ -1,0 +1,22 @@
+# Meester settings. Everything tunable lives here, not in code.
+
+harvest:
+  # Politeness: these are free public endpoints and we intend to keep them that way.
+  concurrency: 8
+  timeout_seconds: 45
+  retries: 2
+  user_agent: "Meester/0.1 (personal job search assistant)"
+  # Drop postings older than this. Stale roles are usually filled or ghosts.
+  max_age_days: 30
+
+remote:
+  # US-first, but non-US remote is acceptable.
+  require_remote: true
+  # Accept a role if it is remote in ANY of these. "ANY" disables the check.
+  accept_countries: [US, CA, GB, EU, ANYWHERE]
+  # Hybrid is not remote. Kept separate so it can be turned on later.
+  accept_hybrid: false
+
+store:
+  path: data/jobs.jsonl
+  seen_path: data/seen.json

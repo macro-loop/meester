@@ -1,0 +1,16 @@
+# Her job search data never belongs in the repo: postings, rejections,
+# salary expectations, application evidence. This line is load-bearing.
+data/
+logs/
+
+# Local pause switch
+PAUSED
+
+# Generated per-machine by `verify-companies --write`
+config/companies.verified.yaml
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store

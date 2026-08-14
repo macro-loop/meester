@@ -1,0 +1,12 @@
+# Authored on Windows, executed on macOS. Without this, git's autocrlf turns the
+# shell scripts into CRLF and macOS fails them with:
+#     bad interpreter: /bin/bash^M
+# Forcing LF on everything text keeps the repo identical on both machines.
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.py   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
