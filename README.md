@@ -48,10 +48,14 @@ Re-running immediately adds **0** rows.
 
 ## Running it on her Mac
 
-Everything runs on her MacBook Air. Once, in Terminal:
+**Step-by-step install instructions: [INSTALL.md](INSTALL.md).** Plan on ten
+minutes at her machine; the only fiddly part is GitHub authentication, which is
+faster done than explained over the phone.
+
+The short version, once auth is sorted:
 
 ```bash
-git clone <your-private-repo-url> ~/Meester && cd ~/Meester && ./scripts/setup_mac.sh
+git clone <repo-url> ~/Meester && cd ~/Meester && ./scripts/setup_mac.sh
 ```
 
 That finds a suitable Python, builds a virtualenv, installs dependencies,
