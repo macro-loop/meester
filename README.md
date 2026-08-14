@@ -82,10 +82,7 @@ timing edge over aggregators. To narrow the gap: keep it on the charger and turn
 on System Settings → Battery → Options → "Wake for network access". If the edge
 turns out to matter, moving *only* the harvest stage to a ~$5/mo box fixes it.
 
-**Updates.** She never edits code. You push to the private repo; the scheduled
-job runs `git pull --ff-only` before each harvest, so fixes arrive on their own.
-A diverged or broken pull logs and continues on the code already present rather
-than failing the run.
+**Updates.** See [Pushing updates](#pushing-updates) below.
 
 **Her data never leaves her machine.** `data/` and `logs/` are gitignored, so
 postings, rejections, salary expectations and application evidence stay local.
@@ -96,6 +93,69 @@ to execute there anyway — her browser profile, her session cookies, her
 residential IP. Submitting from a datacenter would be the exact device
 fingerprint that spam screening looks for. So this choice costs some harvest
 freshness and buys the right execution environment for everything downstream.
+
+## Pushing updates
+
+Enable the pre-push hook once, on your machine:
+
+```bash
+git config core.hooksPath scripts/githooks
+```
+
+Then the loop is just:
+
+```bash
+git add -A && git commit -m "what changed" && git push
+```
+
+Her Mac runs `git pull --ff-only` before every harvest, so the change lands on
+her next run — within the hour if the laptop is awake, otherwise on next wake.
+She does nothing.
+
+**There is no CI and no staging.** Whatever reaches `master` executes unattended
+on her laptop within the hour. The pre-push hook is the only gate, and it checks
+two things:
+
+1. **Every shell script parses.** This matters more than the tests. Broken Python
+   self-heals — the next run pulls the fix *before* executing it. A broken
+   `run_harvest.sh` does not: bash dies before reaching the `git pull`, so her Mac
+   is stranded until someone physically touches it. Treat `scripts/*.sh` as the
+   dangerous files.
+2. **The tests pass.**
+
+Override with `git push --no-verify` only when you genuinely mean it.
+
+### Adding companies to the watchlist
+
+Edit `config/companies.yaml`, commit, push. Her machine notices the file changed
+and re-runs verification automatically before the next harvest.
+
+This needs saying because it was broken at first: harvest reads
+`companies.verified.yaml`, which is gitignored and generated locally, so pushing
+new companies had no effect at all. `run_harvest.sh` now re-verifies whenever the
+tracked seed list changes, and weekly regardless, to catch boards that have died.
+
+### Confirming which version she is running
+
+Every run logs its commit:
+
+```
+2026-08-14 09:14:02  harvest starting (code 503a8d2)
+```
+
+Ask her for the last few lines of `~/Meester/logs/harvest.log` and compare
+against `git log --oneline -1`.
+
+### If you push something broken
+
+Revert and push again — her next run picks up the fix on its own:
+
+```bash
+git revert HEAD && git push
+```
+
+The only case needing hands-on recovery is a syntax error in a shell script,
+which is exactly what the hook exists to prevent.
 
 ## Why it is built this way
 

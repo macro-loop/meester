@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Blocks a push that would break the machine this runs on unattended.
+#
+# There is no CI and no staging. Whatever lands on master executes on her laptop
+# within the hour, with nobody watching. This hook is the only gate.
+#
+# Enable once:  git config core.hooksPath scripts/githooks
+set -uo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$REPO" || exit 1
+
+fail() { printf '\n\033[31mpush blocked:\033[0m %s\n\n' "$*" >&2; exit 1; }
+
+# --- 1. shell scripts must parse ----------------------------------------------
+# This check matters more than the tests. Broken Python still self-heals: the
+# next scheduled run pulls the fix before executing it. A broken run_harvest.sh
+# does NOT - bash dies before reaching the git pull, so the machine is stuck
+# until someone physically touches it.
+for f in scripts/*.sh scripts/githooks/*; do
+  [[ -f "$f" ]] || continue
+  bash -n "$f" 2>/dev/null || fail "$f has a syntax error. This would strand her Mac with no way to self-update."
+done
+
+# --- 2. tests must pass -------------------------------------------------------
+PY=""
+for c in python python3; do
+  command -v "$c" >/dev/null 2>&1 && { PY="$c"; break; }
+done
+[[ -n "$PY" ]] || fail "no python found to run the tests"
+
+if ! "$PY" -m pytest tests/ -q >/tmp/meester_pretest.log 2>&1; then
+  tail -25 /tmp/meester_pretest.log >&2
+  fail "tests are failing. Fix them or push with --no-verify if you are certain."
+fi
+
+printf '\033[32mpre-push ok:\033[0m scripts parse, tests pass\n'
+exit 0

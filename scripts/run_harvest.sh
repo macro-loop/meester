@@ -54,8 +54,45 @@ if [[ ! -f "$REQ_STAMP" ]] || [[ "$(cat "$REQ_STAMP")" != "$REQ_NOW" ]]; then
     || log "WARNING: dependency install failed"
 fi
 
+# --- company watchlist --------------------------------------------------------
+# harvest reads companies.verified.yaml, which is gitignored and generated
+# locally. Without this block, adding companies to companies.yaml and pushing
+# would have no effect here at all - the highest-leverage maintenance task in
+# the system would silently do nothing.
+#
+# Re-verify when the tracked seed list changes, or weekly to catch boards that
+# have since died.
+VERIFIED="$REPO/config/companies.verified.yaml"
+SEED_STAMP="$VENV/.companies.sha"
+SEED_NOW="$(shasum -a 256 "$REPO/config/companies.yaml" | cut -d' ' -f1)"
+NEEDS_VERIFY=0
+
+if [[ ! -f "$VERIFIED" ]]; then
+  NEEDS_VERIFY=1; VERIFY_WHY="no verified list yet"
+elif [[ ! -f "$SEED_STAMP" ]] || [[ "$(cat "$SEED_STAMP")" != "$SEED_NOW" ]]; then
+  NEEDS_VERIFY=1; VERIFY_WHY="companies.yaml changed"
+elif [[ -n "$(find "$VERIFIED" -mtime +7 2>/dev/null)" ]]; then
+  NEEDS_VERIFY=1; VERIFY_WHY="verified list older than 7 days"
+fi
+
+if [[ $NEEDS_VERIFY -eq 1 ]]; then
+  log "re-verifying board tokens ($VERIFY_WHY)"
+  if "$PY" -m meester verify-companies --write >>"$LOG" 2>&1; then
+    echo "$SEED_NOW" > "$SEED_STAMP"
+    log "board tokens re-verified"
+  else
+    log "WARNING: token verification failed - continuing with existing list"
+  fi
+fi
+
 # --- run ----------------------------------------------------------------------
-log "harvest starting"
+# Record which commit produced this run, so a version can be confirmed remotely
+# from the log alone.
+if [[ -d "$REPO/.git" ]]; then
+  log "harvest starting (code $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown))"
+else
+  log "harvest starting"
+fi
 OUT="$("$PY" -m meester harvest --limit 0 2>&1)"
 RC=$?
 printf '%s\n' "$OUT" | sed 's/^/    /' >> "$LOG"
