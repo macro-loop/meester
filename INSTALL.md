@@ -283,16 +283,25 @@ her Mac again.
 
 ## Phase 5 — Hand over
 
-She needs to know exactly two things.
+She needs to know exactly two things. Everything else is yours.
+
+**How she uses it:** double-click **"Remote jobs"** on her Desktop. It opens in
+her browser, needs no internet and no Terminal, and refreshes on its own — she
+just reopens it. Setup puts it there.
+
+There is a search box at the top. **Tell her to type her own job function into
+it** — "design", "marketing", "recruiting". That single step is what makes it
+usable: the full list is several hundred roles, which is noise, but one function
+is usually twenty to forty, which is a morning's browsing. Each row links
+straight to the real application page.
+
+Be straight with her about what it is: every genuinely remote opening found
+across ~70 company career pages, newest first, refreshed automatically. It is
+**not** ranked against her yet, and nothing has been applied to. Ranking arrives
+with the scoring stage, and needs her CV.
 
 **To stop it:** create an empty file named `PAUSED` in the `Meester` folder in
 her home directory — Finder is fine, no Terminal needed. Deleting it resumes.
-
-**Where results appear:** for now, `~/Meester/data/jobs.jsonl`. Be honest that
-it's a raw data file and unpleasant to read; the usable view arrives with the
-scoring stage. It may be better not to show her until then.
-
-Everything else is yours.
 
 ---
 

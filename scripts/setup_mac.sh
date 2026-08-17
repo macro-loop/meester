@@ -137,11 +137,24 @@ fi
 
 say "Scheduled job installed"
 
+# --- 5. Desktop shortcut ------------------------------------------------------
+# The whole system is worthless to her if reaching the results needs a terminal.
+# A symlink resolves once the first harvest writes the file, which the RunAtLoad
+# above triggers immediately.
+ALIAS="$HOME/Desktop/Remote jobs.html"
+if ln -sfn "$REPO/data/jobs.html" "$ALIAS" 2>/dev/null; then
+  say "Added 'Remote jobs' to her Desktop"
+else
+  warn "could not create the Desktop shortcut - she can open $REPO/data/jobs.html directly"
+fi
+
 cat <<EOF
 
   Setup complete.
 
   It runs every $((INTERVAL / 60)) minutes, and once whenever she logs in.
+
+  She opens:                the "Remote jobs" file on her Desktop
 
   Check it is running:      launchctl list | grep meester
   Watch the log:            tail -f "$REPO/logs/harvest.log"

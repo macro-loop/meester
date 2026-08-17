@@ -20,3 +20,5 @@ remote:
 store:
   path: data/jobs.jsonl
   seen_path: data/seen.json
+  # The readable page. This is the only output anyone but a developer opens.
+  report_path: data/jobs.html

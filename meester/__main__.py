@@ -79,7 +79,26 @@ async def cmd_harvest(args: argparse.Namespace) -> int:
                      ROOT / store_cfg.get("seen_path", "data/seen.json"))
     before = len(store)
     added = store.add_new(jobs)
-    print(f"store: {before} known -> {len(store)} known ({len(added)} new)\n")
+    print(f"store: {before} known -> {len(store)} known ({len(added)} new)")
+
+    # Regenerate the readable report every run. This is the only output anyone
+    # other than a developer ever looks at, so it must never go stale - and a
+    # failure here must not lose a successful harvest.
+    try:
+        from .report import build_report
+
+        rows = [
+            json.loads(line)
+            for line in (ROOT / store_cfg.get("path", "data/jobs.jsonl"))
+            .read_text(encoding="utf-8")
+            .splitlines()
+            if line
+        ]
+        out = build_report(rows, ROOT / store_cfg.get("report_path", "data/jobs.html"))
+        print(f"report: {out}\n")
+    except Exception as exc:  # noqa: BLE001
+        print(f"warning: could not write report ({type(exc).__name__}: {exc})\n")
+
     for job in added[: args.limit]:
         print(_fmt(job))
     return 0
@@ -113,6 +132,21 @@ async def cmd_verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report(args: argparse.Namespace) -> int:
+    from .report import build_report
+
+    settings = _load("settings.yaml")
+    store_cfg = settings.get("store", {})
+    path = ROOT / store_cfg.get("path", "data/jobs.jsonl")
+    if not path.exists():
+        print("store is empty - run `python -m meester harvest` first")
+        return 1
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    out = build_report(rows, ROOT / store_cfg.get("report_path", "data/jobs.html"))
+    print(f"report: {len(rows)} roles -> {out}")
+    return 0
+
+
 def cmd_show(args: argparse.Namespace) -> int:
     settings = _load("settings.yaml")
     path = ROOT / settings.get("store", {}).get("path", "data/jobs.jsonl")
@@ -140,6 +174,8 @@ def main(argv: list[str] | None = None) -> int:
     p_v = sub.add_parser("verify-companies", help="probe every configured board token")
     p_v.add_argument("--write", action="store_true", help="write config/companies.verified.yaml")
 
+    sub.add_parser("report", help="write the readable HTML report")
+
     p_s = sub.add_parser("show", help="print the local store")
     p_s.add_argument("--limit", type=int, default=25)
 
@@ -148,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(cmd_harvest(args))
     if args.cmd == "verify-companies":
         return asyncio.run(cmd_verify(args))
+    if args.cmd == "report":
+        return cmd_report(args)
     return cmd_show(args)
 
 
