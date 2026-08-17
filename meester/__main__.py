@@ -34,6 +34,16 @@ def _load(name: str) -> dict:
 LOCAL_COMPANIES = CONFIG / "companies.local.yaml"
 
 
+def _profile_bits() -> tuple[dict, dict | None]:
+    """Preferences + verified ledger, for scoring at report time."""
+    from .profile import load_ledger, load_preferences
+
+    return (
+        load_preferences(ROOT / "profile" / "preferences.yaml"),
+        load_ledger(ROOT / "profile" / "facts_ledger.json"),
+    )
+
+
 def _load_base_companies(explicit: str | None = None) -> dict:
     """Prefer the verified token list; fall back to the raw seed list.
 
@@ -110,7 +120,11 @@ async def cmd_harvest(args: argparse.Namespace) -> int:
             .splitlines()
             if line
         ]
-        out = build_report(rows, ROOT / store_cfg.get("report_path", "data/jobs.html"))
+        prefs, ledger = _profile_bits()
+        out = build_report(
+            rows, ROOT / store_cfg.get("report_path", "data/jobs.html"),
+            prefs=prefs, ledger=ledger,
+        )
         print(f"report: {out}\n")
     except Exception as exc:  # noqa: BLE001
         print(f"warning: could not write report ({type(exc).__name__}: {exc})\n")
@@ -158,7 +172,11 @@ def cmd_report(args: argparse.Namespace) -> int:
         print("store is empty - run `python -m meester harvest` first")
         return 1
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
-    out = build_report(rows, ROOT / store_cfg.get("report_path", "data/jobs.html"))
+    prefs, ledger = _profile_bits()
+    out = build_report(
+        rows, ROOT / store_cfg.get("report_path", "data/jobs.html"),
+        prefs=prefs, ledger=ledger,
+    )
     print(f"report: {len(rows)} roles -> {out}")
     return 0
 
@@ -192,8 +210,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
         # Refresh the Desktop file (token-free) as a side effect, then serve a
         # variant carrying the write token so the update button can install.
         # ctx["token"] is set by serve() before the first request is handled.
-        build_report(rows, ROOT / store_cfg.get("report_path", "data/jobs.html"))
-        return render_report_html(rows, server_token=ctx.get("token"))
+        prefs, ledger = _profile_bits()
+        build_report(rows, ROOT / store_cfg.get("report_path", "data/jobs.html"),
+                     prefs=prefs, ledger=ledger)
+        return render_report_html(rows, server_token=ctx.get("token"),
+                                  prefs=prefs, ledger=ledger)
 
     def verify(ats: str, token: str) -> tuple[bool, int, str]:
         """Check a board really exists, and report how many roles are *remote*.

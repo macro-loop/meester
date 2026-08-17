@@ -43,53 +43,89 @@ def _age_days(row: dict) -> float | None:
     return (datetime.now(timezone.utc) - dt).total_seconds() / 86400.0
 
 
-def _prepare(rows: list[dict]) -> list[dict]:
+def _prepare(
+    rows: list[dict], prefs: dict | None = None, ledger: dict | None = None
+) -> list[dict]:
+    scoring = False
+    if prefs:
+        from .score.gates import has_usable_preferences, score_job
+
+        scoring = has_usable_preferences(prefs)
+
     out = []
     for r in rows:
         age = _age_days(r)
-        out.append(
-            {
-                "t": r.get("title") or "",
-                "c": r.get("company") or "",
-                "l": r.get("location_raw") or ", ".join(r.get("locations") or []) or "Remote",
-                "u": r.get("apply_url") or r.get("url") or "",
-                "d": r.get("department") or r.get("team") or "",
-                "s": r.get("salary_raw") or "",
-                "k": sorted(r.get("remote_countries") or []),
-                "a": round(age, 1) if age is not None else None,
-                "f": r.get("first_seen") or "",
-            }
-        )
+        job = {
+            "t": r.get("title") or "",
+            "c": r.get("company") or "",
+            "l": r.get("location_raw") or ", ".join(r.get("locations") or []) or "Remote",
+            "u": r.get("apply_url") or r.get("url") or "",
+            "d": r.get("department") or r.get("team") or "",
+            "s": r.get("salary_raw") or "",
+            "k": sorted(r.get("remote_countries") or []),
+            "a": round(age, 1) if age is not None else None,
+            "f": r.get("first_seen") or "",
+        }
+        if scoring:
+            verdict = score_job(r, prefs, ledger)
+            # Hard-excluded rows (her own never-show list) drop out entirely.
+            if verdict["score"] <= -900:
+                continue
+            job["m"] = 1 if verdict["match"] else 0
+            job["sc"] = verdict["score"]
+            job["dr"] = 1 if verdict["dream"] else 0
+            if verdict["reasons"]:
+                job["r"] = verdict["reasons"]
+        out.append(job)
     # Newest first; unknown ages last rather than pretending they are fresh.
     out.sort(key=lambda x: (x["a"] is None, x["a"] if x["a"] is not None else 0))
     return out
 
 
-def render_report_html(rows: list[dict], server_token: str | None = None) -> str:
+def render_report_html(
+    rows: list[dict],
+    server_token: str | None = None,
+    prefs: dict | None = None,
+    ledger: dict | None = None,
+) -> str:
     """The jobs page. Two variants of one template:
 
     server_token=None  -> the offline Desktop file. No secret in it, ever - it
                           lives in a folder Finder can reach and gets no writes.
     server_token=str   -> the same page served from localhost, where the token
                           lets the update button actually install.
+
+    With usable preferences, every job carries a score and the page opens on
+    the For-you view. Scoring happens here, at render time, so a preference
+    edit re-ranks on the next page load instead of the next harvest.
     """
-    jobs = _prepare(rows)
+    jobs = _prepare(rows, prefs, ledger)
     companies = sorted({j["c"] for j in jobs})
     generated = datetime.now().strftime("%A %d %B, %H:%M")
     fresh_24h = sum(1 for j in jobs if j["a"] is not None and j["a"] <= 1)
+    matches = sum(1 for j in jobs if j.get("m"))
 
+    foryou_stat = (
+        f'<div class="stat"><b>{matches}</b><span>For you</span></div>' if matches else ""
+    )
     return _TEMPLATE.format(
         generated=html.escape(generated),
         total=len(jobs),
         fresh=fresh_24h,
         companies=len(companies),
+        foryou_stat=foryou_stat,
         data=_safe_json(jobs),
         server_token=json.dumps(server_token),
     )
 
 
-def build_report(rows: list[dict], out_path: Path) -> Path:
-    page = render_report_html(rows, server_token=None)
+def build_report(
+    rows: list[dict],
+    out_path: Path,
+    prefs: dict | None = None,
+    ledger: dict | None = None,
+) -> Path:
+    page = render_report_html(rows, server_token=None, prefs=prefs, ledger=ledger)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(page, encoding="utf-8")
     return out_path
@@ -1172,6 +1208,8 @@ _TEMPLATE = """<!doctype html>
     color:var(--fresh);border:1px solid var(--fresh);border-radius:3px;padding:1px 5px;
     white-space:nowrap}}
   .pay{{color:var(--soft)}}
+  .star{{color:var(--accent)}}
+  .why{{font-size:12.5px;color:var(--accent);margin-top:4px}}
   .upill{{align-self:center;background:var(--accent);color:#fff;border:0;border-radius:6px;
     padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;
     font-family:inherit}}
@@ -1179,7 +1217,7 @@ _TEMPLATE = """<!doctype html>
   @media (prefers-color-scheme:dark){{
     :root:not([data-theme="light"]) .upill{{color:#0A121A}}
   }}
-  .navlinks{{margin-left:auto;display:flex;gap:12px;align-items:center}}
+  .navlinks{{margin-left:auto;display:flex;gap:12px;align-items:center;flex-wrap:wrap}}
   .manage{{align-self:center;color:var(--accent);text-decoration:none;
     font-size:14px;font-weight:600;border:1px solid var(--accent);border-radius:6px;
     padding:8px 14px;white-space:nowrap}}
@@ -1198,6 +1236,7 @@ _TEMPLATE = """<!doctype html>
       <div class="stat"><b>{total}</b><span>Open roles</span></div>
       <div class="stat"><b>{fresh}</b><span>New today</span></div>
       <div class="stat"><b>{companies}</b><span>Companies</span></div>
+      {foryou_stat}
       <div class="navlinks" id="navlinks" hidden>
         <a class="manage" href="http://127.0.0.1:8765/profile">Your profile</a>
         <a class="manage" href="http://127.0.0.1:8765/resume">Your CV</a>
@@ -1211,6 +1250,7 @@ _TEMPLATE = """<!doctype html>
   <div class="controls">
     <input type="search" id="q" placeholder="Search title, company or location&hellip;" autocomplete="off">
     <div class="chips">
+      <button class="chip" id="f-you"   aria-pressed="false" hidden>For you</button>
       <button class="chip" id="f-all"   aria-pressed="true">Everything</button>
       <button class="chip" id="f-today" aria-pressed="false">New today</button>
       <button class="chip" id="f-week"  aria-pressed="false">This week</button>
@@ -1239,7 +1279,7 @@ const emptyEl = document.getElementById('empty');
 const q = document.getElementById('q');
 let filter = 'all';
 
-const chips = {{ all:'f-all', today:'f-today', week:'f-week', pay:'f-pay' }};
+const chips = {{ you:'f-you', all:'f-all', today:'f-today', week:'f-week', pay:'f-pay' }};
 Object.entries(chips).forEach(([key, id]) => {{
   document.getElementById(id).addEventListener('click', () => {{
     filter = key;
@@ -1249,6 +1289,16 @@ Object.entries(chips).forEach(([key, id]) => {{
   }});
 }});
 q.addEventListener('input', render);
+
+// The For-you view exists only when scoring produced matches. Hidden - not
+// empty - otherwise: an empty tab would read as "nothing fits you".
+const HAS_MATCHES = JOBS.some(j => j.m);
+if (HAS_MATCHES) {{
+  document.getElementById('f-you').hidden = false;
+  filter = 'you';
+  document.getElementById('f-you').setAttribute('aria-pressed', 'true');
+  document.getElementById('f-all').setAttribute('aria-pressed', 'false');
+}}
 
 function esc(s) {{
   return String(s).replace(/[&<>"']/g, c =>
@@ -1264,7 +1314,8 @@ function age(a) {{
 
 function render() {{
   const term = q.value.trim().toLowerCase();
-  const rows = JOBS.filter(j => {{
+  let rows = JOBS.filter(j => {{
+    if (filter === 'you'   && !j.m) return false;
     if (filter === 'today' && !(j.a !== null && j.a <= 1)) return false;
     if (filter === 'week'  && !(j.a !== null && j.a <= 7)) return false;
     if (filter === 'pay'   && !j.s) return false;
@@ -1272,17 +1323,27 @@ function render() {{
     return (j.t + ' ' + j.c + ' ' + j.l + ' ' + j.d).toLowerCase().includes(term);
   }});
 
-  countEl.textContent = rows.length + (rows.length === 1 ? ' role' : ' roles');
+  // For-you ranks by fit (dream companies pinned); every other view is by age.
+  if (filter === 'you')
+    rows = rows.slice().sort((a, b) =>
+      (b.dr || 0) - (a.dr || 0) || (b.sc || 0) - (a.sc || 0)
+      || (a.a ?? 999) - (b.a ?? 999));
+
+  countEl.textContent = rows.length + (rows.length === 1 ? ' role' : ' roles')
+    + (filter === 'you' ? ' that fit your profile' : '');
   emptyEl.hidden = rows.length > 0;
 
   list.innerHTML = rows.map(j => {{
     const isNew = j.a !== null && j.a <= 1;
     const bits = [j.l, j.d, j.s].filter(Boolean).map(esc);
+    const star = j.dr ? '<span class="star" title="Dream company">\\u2605</span> ' : '';
+    const why = (j.r && j.r.length)
+      ? '<div class="why">' + j.r.map(esc).join(' \\u00b7 ') + '</div>' : '';
     return '<li><div class="main">'
       + '<a href="' + esc(j.u) + '" target="_blank" rel="noopener">' + esc(j.t) + '</a>'
-      + '<div class="meta"><span class="co">' + esc(j.c) + '</span>'
+      + '<div class="meta">' + star + '<span class="co">' + esc(j.c) + '</span>'
       + bits.map(b => '<span>' + b + '</span>').join('')
-      + '</div></div>'
+      + '</div>' + why + '</div>'
       + (isNew ? '<span class="new">New</span>' : '')
       + '<span class="age">' + age(j.a) + '</span></li>';
   }}).join('');

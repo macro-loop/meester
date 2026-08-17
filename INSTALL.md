@@ -283,25 +283,42 @@ her Mac again.
 
 ## Phase 5 — Hand over
 
-She needs to know exactly two things. Everything else is yours.
-
 **How she uses it:** double-click **"Remote jobs"** on her Desktop. It opens in
-her browser, needs no internet and no Terminal, and refreshes on its own — she
-just reopens it. Setup puts it there.
+her browser, refreshes on its own, and every row links straight to the real
+application page. Setup puts it there.
 
-There is a search box at the top. **Tell her to type her own job function into
-it** — "design", "marketing", "recruiting". That single step is what makes it
-usable: the full list is several hundred roles, which is noise, but one function
-is usually twenty to forty, which is a morning's browsing. Each row links
-straight to the real application page.
+**Then sit with her for ~15 minutes and fill in the three screens** linked at
+the top of that page — no files, no TextEdit, no terminal:
 
-Be straight with her about what it is: every genuinely remote opening found
-across ~70 company career pages, newest first, refreshed automatically. It is
-**not** ranked against her yet, and nothing has been applied to. Ranking arrives
-with the scoring stage, and needs her CV.
+- **Your profile** — titles she'd accept, salary floor, hard exclusions, dream
+  companies. Honest answers, not aspirational ones: an inflated salary floor
+  produces an empty list.
+- **Your CV** — she uploads the PDF she actually sends out, clicks *Read my CV
+  into the editor*, and corrects what the read-in got wrong. The corrected
+  record is the **facts ledger** — what every later stage treats as the only
+  truth about her history. The read-in is rough on purpose; her correction pass
+  is the point.
+- **Cover letters** — two starters to rewrite in her own voice. Placeholders
+  like `{company}` fill per job later; the preview shows each letter against a
+  real posting from her own list.
+
+**What she gets immediately:** with titles in her profile, the jobs page opens
+on a **"For you" tab** — matches ranked with plain-language reasons ("Title
+matches 'Product Designer' · Pay meets your floor"), dream companies starred,
+agency spam dropped. Editing preferences re-ranks on the next page load. With a
+blank profile the tab hides entirely rather than showing an empty list.
+
+Be straight about what it is: ranked matching, not applying. Nothing is
+submitted anywhere by anything in this repo.
+
+Her data — profile, CV, ledger, letters — stays on her Mac: `profile/` is
+gitignored and the pre-push hook refuses anything that looks personal. Both
+layers are tested. The repo being public changes nothing about her data.
 
 **To stop it:** create an empty file named `PAUSED` in the `Meester` folder in
 her home directory — Finder is fine, no Terminal needed. Deleting it resumes.
+**Companies come and go from the Companies screen**; updates install from the
+blue button that appears when you push one.
 
 ---
 
