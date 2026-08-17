@@ -93,8 +93,12 @@ For `macro-loop/meester` they are:
 
 ## Phase 2 — Choose how her Mac gets the code
 
-A private repo needs credentials on her machine. Pick one and carry it into
-Phase 3.
+> **Already decided: the repo is public** (`macro-loop/meester`, verified
+> anonymously readable). Her Mac needs no GitHub account, no login and no keys,
+> and auto-update works permanently. **Skip to Phase 3.2** — the deploy-key step
+> in 3.1 does not apply.
+
+Kept for reference, in case you ever make it private again.
 
 ### Option A — make the repo public *(simplest, and fine)*
 
@@ -146,16 +150,32 @@ printf 'Host github.com\n  IdentityFile ~/.ssh/meester_deploy\n  IdentitiesOnly 
 
 ### 3.2 Clone
 
-Public (Option A or C):
+She does not need to create a folder first — `git clone` creates it. Nor does she
+need to `cd` anywhere: `~/Meester` is an absolute path, so it lands in the right
+place no matter where Terminal opens.
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/meester.git ~/Meester
+git clone https://github.com/macro-loop/meester.git ~/Meester
 ```
 
-Private with deploy key (Option B):
+> **Clone to `~/Meester`, not into Documents or Desktop.** Most Macs have
+> iCloud's "Desktop & Documents Folders" sync enabled. If the repo lives in
+> either, iCloud tries to sync `.venv/` — thousands of files — and can evict them
+> under "Optimize Mac Storage", silently breaking the virtualenv. It would also
+> copy her job-search data to iCloud, which is what the gitignore rules exist to
+> prevent. The home folder root is not synced.
+
+Nothing is hardcoded to that path — every script derives its location from its
+own file, so any folder works. But every command in this document says
+`~/Meester`, and **moving the folder after setup breaks the scheduled job**,
+because launchd stores an absolute path. If she moves it, re-run
+`./scripts/setup_mac.sh`.
+
+If you kept the repo private and used a deploy key (Option B), use the SSH URL
+instead:
 
 ```bash
-git clone git@github.com:YOUR-USERNAME/meester.git ~/Meester
+git clone git@github.com:macro-loop/meester.git ~/Meester
 ```
 
 > The first `git` command may pop a dialog offering to install the Xcode Command
