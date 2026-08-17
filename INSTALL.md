@@ -382,6 +382,8 @@ why you enable it in Phase 1.
 | `Permission denied (publickey)` | Deploy key not registered or SSH config missing | Recheck 3.1; confirm the key is on the repo, not your account |
 | `permission denied: ./scripts/setup_mac.sh` | Exec bit lost | `bash ~/Meester/scripts/setup_mac.sh` |
 | `bad interpreter: /bin/bash^M` | CRLF line endings | Shouldn't happen — `.gitattributes` forces LF. If it does: `sed -i '' 's/\r$//' ~/Meester/scripts/*.sh` |
+| Profile/CV/Letters buttons answer `{"error": "not found"}` | The app service is still running pre-update code — a pull changes disk, not a running process | Fixed automatically since `run_harvest.sh` restarts the service on code drift; by hand: `launchctl kickstart -k gui/$(id -u)/com.meester.ui` |
+| No update button | Either nothing is pending (it only appears when her copy is behind GitHub) or the app service predates the feature | Push something, or the kickstart above |
 | Job is listed but the log is empty | It ran while asleep | Open the lid, wait a minute; launchd fires a catch-up run on wake |
 | Nothing runs at all | Job not registered | Re-run `./scripts/setup_mac.sh`, it is safe to repeat |
 | Remove it entirely | | `~/Meester/scripts/uninstall_mac.sh` |

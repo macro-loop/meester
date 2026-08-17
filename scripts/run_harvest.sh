@@ -77,6 +77,39 @@ if [[ ! -f "$REQ_STAMP" ]] || [[ "$(cat "$REQ_STAMP")" != "$REQ_NOW" ]]; then
     || log "WARNING: dependency install failed"
 fi
 
+# --- UI service freshness -----------------------------------------------------
+# The app screens (Profile, CV, Letters, Companies) run as a separate
+# long-lived launchd service. A git pull changes the code on disk but does
+# nothing to an already-running Python process, so after an update the app
+# kept serving the OLD routes - discovered live as /profile answering
+# {"error":"not found"} while the code on disk was current.
+#
+# Restart on DRIFT, not on pull-event: the stamp records which commit the
+# service was last started on, and any mismatch with HEAD bounces it. This
+# also covers the case where the pull happened outside this script entirely
+# ("git pull && bash run_harvest.sh" - the script's own pull is then a no-op).
+if command -v launchctl >/dev/null 2>&1 && [[ -d "$REPO/.git" ]]; then
+  UI_LABEL="com.meester.ui"
+  UI_PLIST="$HOME/Library/LaunchAgents/$UI_LABEL.plist"
+  UI_STAMP="$VENV/.ui_code_sha"
+  CUR_SHA="$(git -C "$REPO" rev-parse HEAD 2>/dev/null || true)"
+  if [[ -f "$UI_PLIST" && -n "$CUR_SHA" ]]; then
+    if [[ ! -f "$UI_STAMP" ]] || [[ "$(cat "$UI_STAMP")" != "$CUR_SHA" ]]; then
+      if launchctl kickstart -k "gui/$(id -u)/$UI_LABEL" 2>>"$LOG"; then
+        log "app screens restarted on code ${CUR_SHA:0:7}"
+      else
+        launchctl unload "$UI_PLIST" 2>/dev/null || true
+        launchctl load "$UI_PLIST" 2>/dev/null \
+          && log "app screens reloaded via unload/load" \
+          || log "WARNING: could not restart the app screens"
+      fi
+      echo "$CUR_SHA" > "$UI_STAMP"
+    fi
+  elif [[ ! -f "$UI_PLIST" ]] && [[ -d "$HOME/Library/LaunchAgents" ]]; then
+    log "NOTE: app screens service not installed - run scripts/setup_mac.sh once"
+  fi
+fi
+
 # --- company watchlist --------------------------------------------------------
 # harvest reads companies.verified.yaml, which is gitignored and generated
 # locally. Without this block, adding companies to companies.yaml and pushing
