@@ -228,15 +228,33 @@ The most valuable five minutes here, and the easiest to skip. If auto-update is
 silently broken you won't find out for weeks — and you already have one instance
 of exactly that failure mode in this repo's history.
 
-**4.1** In a browser on her Mac, open the repo → `config/companies.yaml` → pencil
-icon. Add one line under `greenhouse:`:
+**4.1** Make a one-line change to `config/companies.yaml` and get it onto
+`master`. Either route works — pick whichever machine you are sitting at.
 
-```yaml
-  - discord
+*From a browser* (no laptop needed — this is the point of doing it this way):
+
+```
+https://github.com/macro-loop/meester/edit/master/config/companies.yaml
 ```
 
-Commit straight to `master` from the browser. (Using the web editor means you
-don't need your own laptop present.)
+Add one line under `greenhouse:` and commit straight to `master`.
+
+*From your own machine*, if it's to hand — simpler:
+
+```bash
+git add -A && git commit -m "Add airbnb to watchlist" && git push
+```
+
+Either way, the line to add is:
+
+```yaml
+  - airbnb
+```
+
+`airbnb` is deliberate: it is not already in the seed list, and its board is live
+with ~190 roles, so the test doubles as a real addition. Do **not** use a token
+already present — a duplicate still changes the file hash and would trigger the
+re-verify, but you'd learn nothing about whether it actually works.
 
 **4.2** Note the new commit's short SHA on GitHub.
 
