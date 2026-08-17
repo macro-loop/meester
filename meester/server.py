@@ -141,8 +141,11 @@ class Handler(BaseHTTPRequestHandler):
             # this is handled before the body parse. do_update is responsible
             # for scheduling the restart AFTER the response is written.
             result = self.ctx["do_update"]()
-            self._json(200, result)
+            # Pop the callback BEFORE serialising - a function inside the dict
+            # would make json.dumps throw mid-response, dropping the connection
+            # exactly when the client most needs the answer.
             after = result.pop("_after_response", None)
+            self._json(200, result)
             if after:
                 after()
             return
