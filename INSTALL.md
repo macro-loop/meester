@@ -17,6 +17,12 @@ last phase needs both machines reachable.
 
 ## Before you start
 
+> **Which shell.** Phase 1 runs on Windows in **Command Prompt** (`cmd.exe`), where
+> single quotes are not quotes — they are literal characters, and any command
+> wrapping an argument in `'...'` will fail. Every Phase 1 command below is
+> written to work there unmodified. Phase 3 onward is bash on her Mac, where the
+> usual rules apply.
+
 **On your machine**, confirm the GitHub CLI is installed and logged in:
 
 ```bash
@@ -70,13 +76,18 @@ You should see `README.md` rendered, and **no `data/` folder**. If you see a
 `data/` folder, stop — her job-search data is being published. It shouldn't
 happen (`.gitignore` covers it) but it is worth the two seconds to look.
 
-### 1.5 Grab the clone URL
+### 1.5 Grab the clone URLs
 
-```bash
-gh repo view --json sshUrl,url --jq '"SSH:   \(.sshUrl)\nHTTPS: \(.url).git"'
+```
+gh repo view --json sshUrl,url
 ```
 
 Keep both. Which one you use depends on the next decision.
+
+For `macro-loop/meester` they are:
+
+- HTTPS — `https://github.com/macro-loop/meester.git`
+- SSH — `git@github.com:macro-loop/meester.git`
 
 ---
 
