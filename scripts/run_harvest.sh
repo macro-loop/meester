@@ -10,7 +10,17 @@ LOG_DIR="$REPO/logs"
 LOG="$LOG_DIR/harvest.log"
 mkdir -p "$LOG_DIR"
 
-log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"; }
+# Always append to the log; additionally echo to the terminal when a person is
+# watching. launchd runs this with stdout pointed at a file nobody reads, so
+# without the TTY check a manual run looks like it did nothing at all.
+log() {
+  local line
+  line="$(date '+%Y-%m-%d %H:%M:%S')  $*"
+  printf '%s\n' "$line" >> "$LOG"
+  if [[ -t 1 ]]; then printf '%s\n' "$line"; fi
+}
+
+interactive() { [[ -t 1 ]]; }
 
 # --- pause switch -------------------------------------------------------------
 # Creating an empty file named PAUSED in the project folder stops everything.
@@ -96,10 +106,17 @@ fi
 OUT="$("$PY" -m meester harvest --limit 0 2>&1)"
 RC=$?
 printf '%s\n' "$OUT" | sed 's/^/    /' >> "$LOG"
+if interactive; then printf '%s\n' "$OUT" | sed 's/^/    /'; fi
+
 if [[ $RC -ne 0 ]]; then
   log "harvest FAILED (exit $RC)"
 else
   log "harvest ok"
+fi
+
+if interactive; then
+  printf '\nFull log: %s\n' "$LOG"
+  printf 'See the jobs: %s -m meester show --limit 40\n\n' "$PY"
 fi
 
 # --- log rotation -------------------------------------------------------------
