@@ -305,6 +305,26 @@ her home directory — Finder is fine, no Terminal needed. Deleting it resumes.
 
 ---
 
+## Updating an install that already exists
+
+If her Mac was set up before some of this landed, one command on her Mac brings
+it fully current:
+
+```bash
+cd ~/Meester && git pull && bash scripts/run_harvest.sh
+```
+
+Pulling *first*, in the shell rather than inside the script, matters: bash keeps
+reading the copy of `run_harvest.sh` it opened at startup, so a self-update
+inside the script would not apply to the run that performed it. The script now
+detects that case and re-execs itself, but pulling first sidesteps it entirely.
+
+Expect afterwards: `~/Meester/data/jobs.html` exists, and a **Remote jobs** file
+appears on her Desktop.
+
+Nothing needs re-running if she hasn't been set up yet — a fresh clone gets
+everything.
+
 ## Ongoing: pushing updates
 
 ```bash

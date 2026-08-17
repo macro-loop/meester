@@ -39,7 +39,20 @@ if [[ "${MEESTER_AUTO_UPDATE:-1}" == "1" ]] && [[ -d "$REPO/.git" ]]; then
     before="$(git -C "$REPO" rev-parse HEAD 2>/dev/null)"
     if git -C "$REPO" pull --ff-only --quiet 2>>"$LOG"; then
       after="$(git -C "$REPO" rev-parse HEAD 2>/dev/null)"
-      [[ "$before" != "$after" ]] && log "updated ${before:0:7} -> ${after:0:7}"
+      if [[ "$before" != "$after" ]]; then
+        log "updated ${before:0:7} -> ${after:0:7}"
+        # bash keeps reading the copy of this file it opened at startup, so a
+        # change to THIS script would otherwise not take effect until the *next*
+        # run. That makes a pushed fix look like it did nothing, on a machine
+        # nobody is watching. Re-exec once if this script itself changed;
+        # MEESTER_REEXEC guards against looping.
+        if [[ -z "${MEESTER_REEXEC:-}" ]] &&
+           ! git -C "$REPO" diff --quiet "$before" "$after" -- scripts/run_harvest.sh 2>/dev/null; then
+          log "run_harvest.sh itself changed - restarting on the new version"
+          export MEESTER_REEXEC=1
+          exec /bin/bash "$REPO/scripts/run_harvest.sh"
+        fi
+      fi
     else
       log "git pull failed or diverged - continuing on current code"
     fi
