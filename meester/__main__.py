@@ -164,10 +164,11 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
-    """Local-only web UI so the watchlist can be edited without a terminal."""
+    """Local-only web UI: watchlist, profile, updates - no terminal needed."""
     from .harvest.base import BoardClient
     from .harvest.run import FETCHERS
-    from .report import build_companies_page, build_report
+    from .profile import load_preferences, save_preferences, schema_for_client
+    from .report import build_companies_page, build_profile_page, build_report
     from .server import serve
 
     settings = _load("settings.yaml")
@@ -288,6 +289,17 @@ def cmd_serve(args: argparse.Namespace) -> int:
         result["_after_response"] = after_response
         return result
 
+    prefs_path = ROOT / "profile" / "preferences.yaml"
+
+    def prefs_get() -> dict:
+        return {"fields": schema_for_client(), "values": load_preferences(prefs_path)}
+
+    def prefs_save(body: dict) -> dict:
+        clean, errors = save_preferences(prefs_path, body)
+        if errors:
+            return {"ok": False, "errors": errors}
+        return {"ok": True, "values": clean}
+
     ctx = {
         "render_report": render_report,
         "render_companies": build_companies_page,
@@ -298,6 +310,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "search": search,
         "repo_status": repo_status,
         "do_update": do_update,
+        "render_profile": build_profile_page,
+        "prefs_get": prefs_get,
+        "prefs_save": prefs_save,
     }
 
     httpd = serve(ctx, port=args.port)

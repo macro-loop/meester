@@ -193,7 +193,7 @@ __SHARED_CSS__
 <body>
 <div class="wrap">
   <div class="topbar">
-    <a class="back" href="/jobs">&larr; Back to jobs</a>
+    <div><a class="back" href="/jobs">&larr; Back to jobs</a>&ensp;&middot;&ensp;<a class="back" href="/profile">Your profile</a></div>
     <button class="upill" id="upill" hidden>Update available &mdash; install</button>
   </div>
   <h1>Companies watched</h1>
@@ -378,6 +378,207 @@ upill.addEventListener('click', async () => {
 """
 
 
+def build_profile_page(token: str) -> str:
+    """The preferences form. Rendered entirely from the schema the server
+    sends, so a new preference field needs zero template changes."""
+    return _PROFILE_TEMPLATE.replace("__SHARED_CSS__", _SHARED_CSS).replace(
+        "__TOKEN__", token
+    )
+
+
+_PROFILE_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your profile</title>
+<style>
+__SHARED_CSS__
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin:26px 0 18px}
+  .topbar a.back{margin:0}
+  .upill{background:var(--accent);color:#fff;border:0;border-radius:6px;
+    padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;
+    font-family:inherit}
+  .upill:disabled{opacity:.6;cursor:default}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) .upill{color:#0A121A}
+  }
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;
+    padding:20px;margin:18px 0}
+  .panel h2{font-size:16px;margin:0 0 14px;font-weight:640}
+  .field{margin-bottom:18px}
+  .field:last-child{margin-bottom:4px}
+  label{display:block;font-size:14px;font-weight:600;margin-bottom:5px}
+  .help{font-size:12.5px;color:var(--muted);margin:4px 0 0}
+  .ferr{font-size:12.5px;color:var(--bad);margin:4px 0 0}
+  input[type=text],textarea,select{width:100%;padding:10px 12px;font-size:15px;
+    font-family:inherit;color:var(--ink);background:var(--ground);
+    border:1px solid var(--line);border-radius:6px;-webkit-appearance:none}
+  textarea{resize:vertical;min-height:74px;line-height:1.5}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px}
+  .check{display:flex;align-items:center;gap:10px}
+  .check input{width:18px;height:18px;accent-color:var(--accent)}
+  .check label{margin:0;font-weight:550}
+  .savebar{position:sticky;bottom:0;background:var(--ground);padding:14px 0 18px;
+    border-top:1px solid var(--line);display:flex;gap:14px;align-items:center}
+  .savebar button{font-family:inherit;font-size:15px;font-weight:600;padding:11px 22px;
+    border-radius:6px;border:1px solid var(--accent);background:var(--accent);
+    color:#fff;cursor:pointer}
+  .savebar button:disabled{opacity:.55;cursor:default}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) .savebar button{color:#0A121A}
+  }
+  .msg{padding:10px 14px;border-radius:6px;font-size:14px;display:none;flex:1}
+  .msg.ok{display:block;background:var(--accent-soft);border-left:2px solid var(--accent)}
+  .msg.err{display:block;background:var(--bad-soft);border-left:2px solid var(--bad)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div><a class="back" href="/jobs">&larr; Back to jobs</a>&ensp;&middot;&ensp;<a class="back" href="/companies">Companies</a></div>
+    <button class="upill" id="upill" hidden>Update available &mdash; install</button>
+  </div>
+  <h1>Your profile</h1>
+  <p class="sub">What the matching uses to rank jobs for you. Everything here stays
+    on this Mac. Answer honestly rather than aspirationally &mdash; an inflated
+    salary floor produces an empty list.</p>
+
+  <div id="form"><p class="sub" style="margin-top:24px">Loading&hellip;</p></div>
+
+  <div class="savebar" id="savebar" hidden>
+    <button id="save">Save</button>
+    <div class="msg" id="msg"></div>
+  </div>
+</div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const msg = document.getElementById('msg');
+
+function say(text, ok) {
+  msg.textContent = text;
+  msg.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? {'Content-Type':'application/json','X-Meester-Token':TOKEN} : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('request failed (' + res.status + ')'));
+  return data;
+}
+
+let FIELDS = [];
+
+function control(f, value) {
+  const id = 'f_' + f.key;
+  if (f.type === 'bool')
+    return '<div class="check"><input type="checkbox" id="' + id + '"'
+      + (value ? ' checked' : '') + '><label for="' + id + '">' + esc(f.label) + '</label></div>';
+
+  let inner = '<label for="' + id + '">' + esc(f.label) + '</label>';
+  const ph = f.placeholder ? ' placeholder="' + esc(f.placeholder) + '"' : '';
+  if (f.type === 'list' || f.type === 'longtext') {
+    const text = Array.isArray(value) ? value.join('\\n') : (value || '');
+    inner += '<textarea id="' + id + '"' + ph
+      + (f.type === 'list' ? ' rows="4"' : ' rows="3"') + '>' + esc(text) + '</textarea>';
+  } else if (f.type === 'select') {
+    inner += '<select id="' + id + '">' + f.options.map(o =>
+      '<option value="' + esc(o) + '"' + (o === (value || '') ? ' selected' : '') + '>'
+      + (o ? esc(o) : 'No preference') + '</option>').join('') + '</select>';
+  } else {
+    const mode = f.type === 'number' ? ' inputmode="numeric"' : '';
+    inner += '<input type="text" id="' + id + '"' + ph + mode
+      + ' value="' + esc(value == null ? '' : value) + '">';
+  }
+  if (f.help) inner += '<p class="help">' + esc(f.help) + '</p>';
+  inner += '<p class="ferr" id="err_' + f.key + '"></p>';
+  return inner;
+}
+
+function render(fields, values) {
+  FIELDS = fields;
+  const sections = [];
+  const by = {};
+  fields.forEach(f => {
+    if (!by[f.section]) { by[f.section] = []; sections.push(f.section); }
+    by[f.section].push(f);
+  });
+  document.getElementById('form').innerHTML = sections.map(s =>
+    '<div class="panel"><h2>' + esc(s) + '</h2>'
+    + by[s].map(f => '<div class="field">' + control(f, values[f.key]) + '</div>').join('')
+    + '</div>').join('');
+  document.getElementById('savebar').hidden = false;
+}
+
+function collect() {
+  const out = {};
+  FIELDS.forEach(f => {
+    const el = document.getElementById('f_' + f.key);
+    if (!el) return;
+    out[f.key] = f.type === 'bool' ? el.checked : el.value;
+  });
+  return out;
+}
+
+document.getElementById('save').addEventListener('click', async () => {
+  const btn = document.getElementById('save');
+  btn.disabled = true;
+  document.querySelectorAll('.ferr').forEach(e => e.textContent = '');
+  try {
+    const res = await api('/api/profile/preferences', collect());
+    if (res.ok) {
+      say('Saved. Takes effect on the next harvest \\u2014 within the hour.', true);
+    } else {
+      Object.entries(res.errors || {}).forEach(([k, v]) => {
+        const el = document.getElementById('err_' + k);
+        if (el) el.textContent = v;
+      });
+      say('A couple of answers need fixing \\u2014 see the notes in red.', false);
+    }
+  } catch (e) { say(e.message, false); }
+  btn.disabled = false;
+});
+
+api('/api/profile/preferences')
+  .then(d => render(d.fields, d.values))
+  .catch(e => { document.getElementById('form').innerHTML = ''; say(e.message, false); });
+
+// Update pill - same behaviour as the other pages.
+const upill = document.getElementById('upill');
+fetch('/api/status').then(r => r.json()).then(s => {
+  if (s && s.behind) upill.hidden = false;
+}).catch(() => {});
+upill.addEventListener('click', async () => {
+  upill.disabled = true;
+  upill.textContent = 'Installing\\u2026';
+  try {
+    const d = await api('/api/update', {});
+    if (!d.ok) { say(d.error || 'Update failed', false); upill.textContent = 'Update failed'; return; }
+    if (!d.changed) { upill.textContent = 'Already up to date'; return; }
+    upill.textContent = 'Restarting\\u2026';
+    const wait = setInterval(() => {
+      fetch('/api/ping').then(r => {
+        if (r.ok) { clearInterval(wait); location.reload(); }
+      }).catch(() => {});
+    }, 1500);
+  } catch (e) { say(e.message, false); upill.disabled = false; }
+});
+</script>
+</body>
+</html>
+"""
+
+
 _TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
@@ -447,7 +648,8 @@ _TEMPLATE = """<!doctype html>
   @media (prefers-color-scheme:dark){{
     :root:not([data-theme="light"]) .upill{{color:#0A121A}}
   }}
-  .manage{{margin-left:auto;align-self:center;color:var(--accent);text-decoration:none;
+  .navlinks{{margin-left:auto;display:flex;gap:12px;align-items:center}}
+  .manage{{align-self:center;color:var(--accent);text-decoration:none;
     font-size:14px;font-weight:600;border:1px solid var(--accent);border-radius:6px;
     padding:8px 14px;white-space:nowrap}}
   .manage:hover{{background:var(--accent-soft)}}
@@ -465,8 +667,11 @@ _TEMPLATE = """<!doctype html>
       <div class="stat"><b>{total}</b><span>Open roles</span></div>
       <div class="stat"><b>{fresh}</b><span>New today</span></div>
       <div class="stat"><b>{companies}</b><span>Companies</span></div>
-      <a class="manage" id="manage" href="http://127.0.0.1:8765/companies" hidden>Add companies &rarr;</a>
-      <button class="upill" id="upill" hidden>Update available</button>
+      <div class="navlinks" id="navlinks" hidden>
+        <a class="manage" href="http://127.0.0.1:8765/profile">Your profile</a>
+        <a class="manage" href="http://127.0.0.1:8765/companies">Add companies &rarr;</a>
+        <button class="upill" id="upill" hidden>Update available</button>
+      </div>
     </div>
   </header>
 
@@ -555,7 +760,7 @@ render();
 // Only offer the Companies screen if the local helper is actually running.
 // A dead link is worse than no link for someone who won't debug it.
 fetch('http://127.0.0.1:8765/api/ping', {{mode: 'cors'}})
-  .then(r => r.ok && (document.getElementById('manage').hidden = false))
+  .then(r => r.ok && (document.getElementById('navlinks').hidden = false))
   .catch(() => {{}});
 
 // Update pill. From the Desktop file it can only point at the app (no token

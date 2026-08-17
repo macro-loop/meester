@@ -31,9 +31,16 @@ def live(tmp_path):
         return {"ok": True, "changed": True, "old": "aaa", "new": "bbb",
                 "restarting": True, "_after_response": after}
 
+    saved = {}
+
+    def prefs_save(body):
+        saved.update(body)
+        return {"ok": True, "values": body}
+
     ctx = {
         "render_report": lambda: "<title>jobs</title>",
         "render_companies": lambda token: "<title>companies</title>",
+        "render_profile": lambda token: "<title>profile</title>",
         "load_base": lambda: {"greenhouse": ["stripe"]},
         "local_path": tmp_path / "companies.local.yaml",
         "token_path": tmp_path / ".server_token",
@@ -41,6 +48,8 @@ def live(tmp_path):
         "search": lambda q: ([], []),
         "repo_status": lambda: {"sha": "aaa", "behind": 1, "dirty": False, "error": ""},
         "do_update": do_update,
+        "prefs_get": lambda: {"fields": [], "values": {"salary_floor": 1}},
+        "prefs_save": prefs_save,
     }
     httpd = serve(ctx, port=0)
     port = httpd.server_address[1]
@@ -93,7 +102,44 @@ def test_update_response_arrives_complete_before_the_restart_hook(live):
 
 def test_pages_and_ping_still_serve(live):
     base, _, _ = live
-    with urllib.request.urlopen(f"{base}/jobs", timeout=10) as r:
-        assert b"jobs" in r.read()
+    for page, marker in (("/jobs", b"jobs"), ("/profile", b"profile")):
+        with urllib.request.urlopen(f"{base}{page}", timeout=10) as r:
+            assert marker in r.read()
     code, data = _get(f"{base}/api/ping")
     assert code == 200 and data["ok"]
+
+
+def test_preferences_read_open_write_gated(live):
+    base, token, _ = live
+    code, data = _get(f"{base}/api/profile/preferences")
+    assert code == 200 and data["values"]["salary_floor"] == 1
+
+    code, _ = _post(f"{base}/api/profile/preferences", body=b'{"salary_floor": 2}',
+                    headers={"Content-Type": "application/json"})
+    assert code == 403
+
+    code, data = _post(
+        f"{base}/api/profile/preferences", body=b'{"salary_floor": 2}',
+        headers={"Content-Type": "application/json", "X-Meester-Token": token},
+    )
+    assert code == 200 and data["ok"]
+
+
+def test_wrong_host_header_is_rejected_everywhere(live):
+    """DNS-rebinding guard: an attacker's domain resolving to 127.0.0.1 sends
+    their hostname in Host, and every route must refuse it - reads included,
+    because preferences and soon the resume flow through GET responses."""
+    base, token, _ = live
+    for path in ("/api/profile/preferences", "/api/status", "/jobs"):
+        req = urllib.request.Request(f"{base}{path}", headers={"Host": "evil.example"})
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req, timeout=10)
+        assert e.value.code == 403
+
+    req = urllib.request.Request(
+        f"{base}/api/update", data=b"", method="POST",
+        headers={"Host": "evil.example", "X-Meester-Token": token},
+    )
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(req, timeout=10)
+    assert e.value.code == 403

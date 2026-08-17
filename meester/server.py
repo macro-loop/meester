@@ -72,6 +72,18 @@ class Handler(BaseHTTPRequestHandler):
             code, json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8", cors
         )
 
+    def _host_ok(self) -> bool:
+        """Reject requests whose Host header is not loopback.
+
+        This is the DNS-rebinding guard for READS: an attacker's domain
+        resolving to 127.0.0.1 makes their page same-origin with this server
+        in the browser's eyes, so CORS stops nothing - but their requests
+        carry Host: attacker.com, and this check kills them. Matters because
+        preferences (and soon the resume) flow through GET responses.
+        """
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower()
+        return host in ("127.0.0.1", "localhost", "::1")
+
     def _origin_ok(self) -> bool:
         origin = self.headers.get("Origin")
         if origin is None:
@@ -102,6 +114,9 @@ class Handler(BaseHTTPRequestHandler):
     # --- routes ----------------------------------------------------------------
 
     def do_GET(self) -> None:  # noqa: N802
+        if not self._host_ok():
+            self._json(403, {"error": "wrong host"})
+            return
         route = urlparse(self.path).path.rstrip("/") or "/"
         if route in ("/", "/jobs"):
             html = self.ctx["render_report"]()
@@ -109,6 +124,11 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/companies":
             html = self.ctx["render_companies"](self.ctx["token"])
             self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+        elif route == "/profile":
+            html = self.ctx["render_profile"](self.ctx["token"])
+            self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+        elif route == "/api/profile/preferences":
+            self._json(200, self.ctx["prefs_get"]())
         elif route == "/api/ping":
             self._json(200, {"ok": True}, cors=True)
         elif route == "/api/status":
@@ -123,12 +143,16 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
+        if not self._host_ok():
+            self._json(403, {"error": "wrong host"})
+            return
         route = urlparse(self.path).path.rstrip("/")
         if route not in (
             "/api/companies/add",
             "/api/companies/remove",
             "/api/companies/search",
             "/api/update",
+            "/api/profile/preferences",
         ):
             self._json(404, {"error": "not found"})
             return
@@ -153,6 +177,10 @@ class Handler(BaseHTTPRequestHandler):
         body = self._read_json()
         if not isinstance(body, dict):
             self._json(400, {"error": "expected a JSON object"})
+            return
+
+        if route == "/api/profile/preferences":
+            self._json(200, self.ctx["prefs_save"](body))
             return
 
         if route.endswith("/search"):
