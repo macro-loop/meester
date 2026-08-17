@@ -7,10 +7,19 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LABEL="com.meester.harvest"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
-launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || launchctl unload "$PLIST" 2>/dev/null || true
-rm -f "$PLIST"
+UI_LABEL="com.meester.ui"
+UI_PLIST="$HOME/Library/LaunchAgents/$UI_LABEL.plist"
 
-echo "Scheduled job removed. Nothing will run automatically any more."
+for pair in "$LABEL|$PLIST" "$UI_LABEL|$UI_PLIST"; do
+  label="${pair%%|*}"; plist="${pair##*|}"
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null \
+    || launchctl unload "$plist" 2>/dev/null || true
+  rm -f "$plist"
+done
+
+rm -f "$HOME/Desktop/Remote jobs.html"
+
+echo "Scheduled job and Companies screen removed. Nothing runs automatically any more."
 echo
 echo "Your data is untouched at: $REPO/data"
 echo "To delete it as well:      rm -rf \"$REPO/data\" \"$REPO/logs\""

@@ -137,6 +137,54 @@ fi
 
 say "Scheduled job installed"
 
+# --- 4b. Local UI service -----------------------------------------------------
+# A page opened as file:// cannot write to disk, and Safari has no File System
+# Access API, so editing the watchlist without a terminal needs a local server.
+# Bound to 127.0.0.1 only. KeepAlive restarts it if it ever dies.
+UI_LABEL="com.meester.ui"
+UI_PLIST="$HOME/Library/LaunchAgents/$UI_LABEL.plist"
+UI_PORT="${MEESTER_PORT:-8765}"
+
+say "Installing the Companies screen (localhost:$UI_PORT)"
+cat > "$UI_PLIST" <<UI_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$UI_LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$REPO/.venv/bin/python</string>
+        <string>-m</string>
+        <string>meester</string>
+        <string>serve</string>
+        <string>--port</string>
+        <string>$UI_PORT</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$REPO</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$REPO/logs/ui.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>$REPO/logs/ui.err.log</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
+UI_EOF
+
+launchctl bootout "gui/$(id -u)/$UI_LABEL" 2>/dev/null || true
+if ! launchctl bootstrap "gui/$(id -u)" "$UI_PLIST" 2>/dev/null; then
+  launchctl unload "$UI_PLIST" 2>/dev/null || true
+  launchctl load "$UI_PLIST" 2>/dev/null || warn "could not start the Companies screen"
+fi
+
 # --- 5. Desktop shortcut ------------------------------------------------------
 # The whole system is worthless to her if reaching the results needs a terminal.
 # A symlink resolves once the first harvest writes the file, which the RunAtLoad

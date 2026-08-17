@@ -17,6 +17,12 @@ PAUSED
 # Generated per-machine by `verify-companies --write`
 config/companies.verified.yaml
 
+# Her own watchlist additions, written by the Companies screen. Must stay
+# untracked: if git tracked it, editing it would leave her repo dirty, the
+# `git pull --ff-only` in run_harvest.sh would refuse, and auto-update would
+# silently stop on a machine nobody is watching.
+config/companies.local.yaml
+
 .venv/
 __pycache__/
 *.pyc

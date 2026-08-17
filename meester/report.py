@@ -83,6 +83,217 @@ def build_report(rows: list[dict], out_path: Path) -> Path:
     return out_path
 
 
+def build_companies_page(token: str) -> str:
+    """The watchlist editor. Content is fetched from the API so it is never stale."""
+    return _COMPANIES_TEMPLATE.replace("__SHARED_CSS__", _SHARED_CSS).replace(
+        "__TOKEN__", token
+    )
+
+
+_SHARED_CSS = """
+  :root {
+    --ground:#F2F5F7; --surface:#FFFFFF; --ink:#14202B; --soft:#35485A;
+    --muted:#5A6B7A; --line:#CBD6DE; --line-soft:#E1E8ED; --accent:#0B6E8C;
+    --accent-soft:#E2EFF4; --fresh:#0B6E8C; --bad:#B5502A; --bad-soft:#F7E9E3;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#0E1720; --surface:#16222D; --ink:#DCE6EC; --soft:#B4C4CF;
+      --muted:#8496A4; --line:#2A3C4C; --line-soft:#1E2E3C; --accent:#4FB3D0;
+      --accent-soft:#16303C; --fresh:#4FB3D0; --bad:#E5946B; --bad-soft:#33211A;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+    font-size:15px;line-height:1.5;padding:0 16px 80px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:820px;margin:0 auto}
+  h1{font-size:clamp(24px,4vw,32px);letter-spacing:-.02em;margin:0 0 6px;font-weight:640}
+  .sub{color:var(--muted);font-size:14px;margin:0}
+  a.back{display:inline-block;margin:26px 0 18px;color:var(--accent);
+    text-decoration:none;font-size:14px}
+  a.back:hover{text-decoration:underline}
+"""
+
+
+_COMPANIES_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Companies watched</title>
+<style>
+__SHARED_CSS__
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;
+    padding:20px;margin:22px 0}
+  .panel h2{font-size:17px;margin:0 0 4px;font-weight:640}
+  .panel p.hint{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+  form{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start}
+  label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+  input[type=text],select{padding:10px 12px;font-size:16px;font-family:inherit;
+    color:var(--ink);background:var(--ground);border:1px solid var(--line);
+    border-radius:6px;-webkit-appearance:none}
+  input[type=text]{flex:1 1 240px;min-width:0}
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px}
+  button{font-family:inherit;font-size:15px;font-weight:600;padding:10px 18px;
+    border-radius:6px;border:1px solid var(--accent);background:var(--accent);
+    color:#fff;cursor:pointer}
+  button:disabled{opacity:.55;cursor:default}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) button{color:#0A121A}
+  }
+  .msg{margin-top:14px;padding:11px 14px;border-radius:6px;font-size:14px;display:none}
+  .msg.ok{display:block;background:var(--accent-soft);border-left:2px solid var(--accent)}
+  .msg.err{display:block;background:var(--bad-soft);border-left:2px solid var(--bad)}
+  .group{margin-top:26px}
+  .group h3{font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:500}
+  ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+  li{display:flex;align-items:center;gap:8px;background:var(--surface);
+    border:1px solid var(--line);border-radius:20px;padding:5px 6px 5px 13px;font-size:14px}
+  li.mine{border-color:var(--accent)}
+  li .x{border:0;background:none;color:var(--muted);font-size:17px;line-height:1;
+    padding:2px 7px;cursor:pointer;border-radius:50%}
+  li .x:hover{color:var(--bad);background:var(--bad-soft)}
+  .count{color:var(--muted);font-size:13px;margin:0}
+  .empty{color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/jobs">&larr; Back to jobs</a>
+  <h1>Companies watched</h1>
+  <p class="sub">Their careers pages are checked every hour. <span id="total"></span></p>
+
+  <div class="panel">
+    <h2>Add a company</h2>
+    <p class="hint">Type the company's name as it appears in their job board web address &mdash;
+      for <em>jobs.lever.co/<b>brex</b></em> that's &ldquo;brex&rdquo;. It's checked
+      against the live board before being saved, so a wrong name is caught straight away.</p>
+    <form id="add">
+      <div>
+        <label for="ats">Board</label>
+        <select id="ats">
+          <option value="greenhouse">Greenhouse</option>
+          <option value="lever">Lever</option>
+          <option value="ashby">Ashby</option>
+        </select>
+      </div>
+      <div style="flex:1 1 240px">
+        <label for="token">Company</label>
+        <input type="text" id="token" placeholder="e.g. brex" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button type="submit" id="go">Add</button>
+      </div>
+    </form>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div id="lists"></div>
+</div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const msg = document.getElementById('msg');
+const go = document.getElementById('go');
+
+function say(text, ok) {
+  msg.textContent = text;
+  msg.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? {'Content-Type':'application/json','X-Meester-Token':TOKEN} : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('request failed (' + res.status + ')'));
+  return data;
+}
+
+function draw(snap) {
+  document.getElementById('total').textContent =
+    snap.total + (snap.total === 1 ? ' company' : ' companies');
+
+  const mine = snap.added || {};
+  const mineCount = Object.values(mine).reduce((n, v) => n + v.length, 0);
+  let html = '';
+
+  if (mineCount) {
+    html += '<div class="group"><h3>Added by you</h3><ul>';
+    for (const [ats, list] of Object.entries(mine))
+      for (const t of list)
+        html += '<li class="mine">' + esc(t)
+          + ' <button class="x" data-ats="' + ats + '" data-token="' + esc(t)
+          + '" title="Remove">&times;</button></li>';
+    html += '</ul></div>';
+  }
+
+  for (const [ats, list] of Object.entries(snap.all || {})) {
+    const own = new Set(mine[ats] || []);
+    const rest = list.filter(t => !own.has(t));
+    if (!rest.length) continue;
+    html += '<div class="group"><h3>' + ats + ' &middot; ' + rest.length + '</h3><ul>';
+    for (const t of rest)
+      html += '<li>' + esc(t)
+        + ' <button class="x" data-ats="' + ats + '" data-token="' + esc(t)
+        + '" title="Stop watching">&times;</button></li>';
+    html += '</ul></div>';
+  }
+
+  document.getElementById('lists').innerHTML = html || '<p class="empty">Nothing yet.</p>';
+  document.querySelectorAll('.x').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      draw(await api('/api/companies/remove',
+        {ats: b.dataset.ats, token: b.dataset.token}));
+      say('Stopped watching ' + b.dataset.token + '.', true);
+    } catch (e) { say(e.message, false); b.disabled = false; }
+  }));
+}
+
+document.getElementById('add').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const ats = document.getElementById('ats').value;
+  const field = document.getElementById('token');
+  const token = field.value.trim();
+  if (!token) return;
+  go.disabled = true;
+  say('Checking their job board\\u2026', true);
+  try {
+    const snap = await api('/api/companies/add', {ats, token});
+    say(snap.jobs
+        ? 'Added ' + token + ' \\u2014 ' + snap.jobs + ' remote '
+          + (snap.jobs === 1 ? 'role' : 'roles')
+          + ' open there right now. They appear in your list within the hour.'
+        : 'Added ' + token + ', but they have no remote roles open at the moment. '
+          + 'It will keep checking, and anything new shows up automatically.', true);
+    field.value = '';
+    draw(snap);
+  } catch (e) {
+    say(e.message, false);
+  }
+  go.disabled = false;
+});
+
+api('/api/companies').then(draw).catch(e => say(e.message, false));
+</script>
+</body>
+</html>
+"""
+
+
 _TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
@@ -145,6 +356,10 @@ _TEMPLATE = """<!doctype html>
     color:var(--fresh);border:1px solid var(--fresh);border-radius:3px;padding:1px 5px;
     white-space:nowrap}}
   .pay{{color:var(--soft)}}
+  .manage{{margin-left:auto;align-self:center;color:var(--accent);text-decoration:none;
+    font-size:14px;font-weight:600;border:1px solid var(--accent);border-radius:6px;
+    padding:8px 14px;white-space:nowrap}}
+  .manage:hover{{background:var(--accent-soft)}}
   .empty{{padding:50px 0;text-align:center;color:var(--muted)}}
   footer{{margin-top:32px;padding-top:18px;border-top:1px solid var(--line);
     color:var(--muted);font-size:13px}}
@@ -159,6 +374,7 @@ _TEMPLATE = """<!doctype html>
       <div class="stat"><b>{total}</b><span>Open roles</span></div>
       <div class="stat"><b>{fresh}</b><span>New today</span></div>
       <div class="stat"><b>{companies}</b><span>Companies</span></div>
+      <a class="manage" id="manage" href="http://127.0.0.1:8765/companies" hidden>Add companies &rarr;</a>
     </div>
   </header>
 
@@ -240,6 +456,12 @@ function render() {{
 }}
 
 render();
+
+// Only offer the Companies screen if the local helper is actually running.
+// A dead link is worse than no link for someone who won't debug it.
+fetch('http://127.0.0.1:8765/api/ping', {{mode: 'cors'}})
+  .then(r => r.ok && (document.getElementById('manage').hidden = false))
+  .catch(() => {{}});
 </script>
 </body>
 </html>

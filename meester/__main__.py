@@ -31,7 +31,10 @@ def _load(name: str) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
-def _load_companies(explicit: str | None = None) -> dict:
+LOCAL_COMPANIES = CONFIG / "companies.local.yaml"
+
+
+def _load_base_companies(explicit: str | None = None) -> dict:
     """Prefer the verified token list; fall back to the raw seed list.
 
     Roughly 40% of hand-written board tokens are wrong or stale, so harvesting
@@ -44,6 +47,19 @@ def _load_companies(explicit: str | None = None) -> dict:
     print("note: no companies.verified.yaml - using unverified seed list.")
     print("      run `python -m meester verify-companies --write` first.\n")
     return _load("companies.yaml")
+
+
+def _load_companies(explicit: str | None = None) -> dict:
+    """The tracked list plus whatever she added from the Companies screen."""
+    from .watchlist import load_local, merge
+
+    base = _load_base_companies(explicit)
+    local = load_local(LOCAL_COMPANIES)
+    merged = merge(base, local)
+    extra = sum(len(v) for v in (local.get("added") or {}).values())
+    if extra:
+        print(f"watchlist: {extra} company(ies) added locally")
+    return merged
 
 
 def _fmt(job) -> str:
@@ -147,6 +163,87 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Local-only web UI so the watchlist can be edited without a terminal."""
+    from .harvest.base import BoardClient
+    from .harvest.run import FETCHERS
+    from .report import build_companies_page, build_report
+    from .server import serve
+
+    settings = _load("settings.yaml")
+    store_cfg = settings.get("store", {})
+    store_path = ROOT / store_cfg.get("path", "data/jobs.jsonl")
+
+    def render_report() -> str:
+        rows = (
+            [json.loads(l) for l in store_path.read_text(encoding="utf-8").splitlines() if l]
+            if store_path.exists()
+            else []
+        )
+        out = ROOT / store_cfg.get("report_path", "data/jobs.html")
+        build_report(rows, out)
+        return out.read_text(encoding="utf-8")
+
+    def verify(ats: str, token: str) -> tuple[bool, int, str]:
+        """Check a board really exists, and report how many roles are *remote*.
+
+        Returning the raw opening count would be misleading: Faire, for one, has
+        67 openings of which 60 are office-based. Telling her "67" and then
+        showing none in her list is a confusing gap, so the count reported is
+        the one that will actually reach her.
+        """
+        from .remote import is_acceptable
+
+        async def probe():
+            hcfg = settings.get("harvest", {})
+            async with BoardClient(
+                concurrency=1,
+                timeout=hcfg.get("timeout_seconds", 45),
+                retries=0,
+                user_agent=hcfg.get("user_agent", "Meester/0.1"),
+            ) as client:
+                return await FETCHERS[ats](client, token)
+
+        try:
+            jobs, err = asyncio.run(probe())
+        except Exception as exc:  # noqa: BLE001
+            return False, 0, f"could not reach the board ({type(exc).__name__})"
+        if err:
+            return False, 0, f"no {ats} board called '{token}'"
+        if not jobs:
+            return False, 0, f"'{token}' exists on {ats} but has no open roles"
+
+        rcfg = settings.get("remote", {})
+        accept = rcfg.get("accept_countries", ["ANY"])
+        remote = sum(
+            1
+            for j in jobs
+            if is_acceptable(
+                j.workplace, set(j.remote_countries), accept, rcfg.get("accept_hybrid", False)
+            )
+        )
+        return True, remote, ""
+
+    ctx = {
+        "render_report": render_report,
+        "render_companies": build_companies_page,
+        "load_base": lambda: _load_base_companies(None),
+        "local_path": LOCAL_COMPANIES,
+        "token_path": ROOT / "data" / ".server_token",
+        "verify": verify,
+    }
+
+    httpd = serve(ctx, port=args.port)
+    print(f"Meester UI on http://127.0.0.1:{args.port}/  (Ctrl-C to stop)")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped")
+    finally:
+        httpd.server_close()
+    return 0
+
+
 def cmd_show(args: argparse.Namespace) -> int:
     settings = _load("settings.yaml")
     path = ROOT / settings.get("store", {}).get("path", "data/jobs.jsonl")
@@ -176,6 +273,9 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("report", help="write the readable HTML report")
 
+    p_srv = sub.add_parser("serve", help="local UI for editing the watchlist")
+    p_srv.add_argument("--port", type=int, default=8765)
+
     p_s = sub.add_parser("show", help="print the local store")
     p_s.add_argument("--limit", type=int, default=25)
 
@@ -186,6 +286,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(cmd_verify(args))
     if args.cmd == "report":
         return cmd_report(args)
+    if args.cmd == "serve":
+        return cmd_serve(args)
     return cmd_show(args)
 
 
