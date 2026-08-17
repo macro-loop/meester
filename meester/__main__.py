@@ -224,6 +224,18 @@ def cmd_serve(args: argparse.Namespace) -> int:
         )
         return True, remote, ""
 
+    def search(query: str) -> tuple[list[dict], list[str]]:
+        """Resolve a company name or pasted careers link to live boards."""
+        from .lookup import find_boards
+
+        try:
+            matches, tried = asyncio.run(
+                find_boards(query, user_agent=settings.get("harvest", {}).get("user_agent", "Meester/0.1"))
+            )
+        except Exception:  # noqa: BLE001 - a lookup failure must not kill the server
+            return [], []
+        return [m.as_dict() for m in matches], tried
+
     ctx = {
         "render_report": render_report,
         "render_companies": build_companies_page,
@@ -231,6 +243,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "local_path": LOCAL_COMPANIES,
         "token_path": ROOT / "data" / ".server_token",
         "verify": verify,
+        "search": search,
     }
 
     httpd = serve(ctx, port=args.port)

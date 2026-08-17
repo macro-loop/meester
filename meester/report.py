@@ -147,6 +147,14 @@ __SHARED_CSS__
   .msg{margin-top:14px;padding:11px 14px;border-radius:6px;font-size:14px;display:none}
   .msg.ok{display:block;background:var(--accent-soft);border-left:2px solid var(--accent)}
   .msg.err{display:block;background:var(--bad-soft);border-left:2px solid var(--bad)}
+  .found{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+  .hit{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:11px 14px;border:1px solid var(--accent);border-radius:6px;
+    background:var(--accent-soft)}
+  .hit.off{border-color:var(--line);background:var(--ground);opacity:.7}
+  .hit b{font-size:15px}
+  .hit span{display:block;font-size:12.5px;color:var(--muted);margin-top:1px}
+  .hit .pick{padding:7px 15px;font-size:14px}
   .group{margin-top:26px}
   .group h3{font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;
     text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:500}
@@ -169,28 +177,21 @@ __SHARED_CSS__
 
   <div class="panel">
     <h2>Add a company</h2>
-    <p class="hint">Type the company's name as it appears in their job board web address &mdash;
-      for <em>jobs.lever.co/<b>brex</b></em> that's &ldquo;brex&rdquo;. It's checked
-      against the live board before being saved, so a wrong name is caught straight away.</p>
+    <p class="hint">Type a company name &mdash; or paste the link to their jobs page if you
+      have it. Their careers page is looked up and checked before anything is saved.</p>
     <form id="add">
-      <div>
-        <label for="ats">Board</label>
-        <select id="ats">
-          <option value="greenhouse">Greenhouse</option>
-          <option value="lever">Lever</option>
-          <option value="ashby">Ashby</option>
-        </select>
-      </div>
-      <div style="flex:1 1 240px">
-        <label for="token">Company</label>
-        <input type="text" id="token" placeholder="e.g. brex" autocomplete="off" spellcheck="false">
+      <div style="flex:1 1 260px">
+        <label for="q">Company name or link</label>
+        <input type="text" id="q" placeholder="Figma &mdash; or jobs.lever.co/brex"
+               autocomplete="off" spellcheck="false">
       </div>
       <div>
         <label>&nbsp;</label>
-        <button type="submit" id="go">Add</button>
+        <button type="submit" id="go">Find</button>
       </div>
     </form>
     <div class="msg" id="msg"></div>
+    <div id="results"></div>
   </div>
 
   <div id="lists"></div>
@@ -263,14 +264,11 @@ function draw(snap) {
   }));
 }
 
-document.getElementById('add').addEventListener('submit', async ev => {
-  ev.preventDefault();
-  const ats = document.getElementById('ats').value;
-  const field = document.getElementById('token');
-  const token = field.value.trim();
-  if (!token) return;
-  go.disabled = true;
-  say('Checking their job board\\u2026', true);
+const results = document.getElementById('results');
+
+async function confirmAdd(ats, token, btn) {
+  btn.disabled = true;
+  say('Adding ' + token + '\\u2026', true);
   try {
     const snap = await api('/api/companies/add', {ats, token});
     say(snap.jobs
@@ -279,8 +277,45 @@ document.getElementById('add').addEventListener('submit', async ev => {
           + ' open there right now. They appear in your list within the hour.'
         : 'Added ' + token + ', but they have no remote roles open at the moment. '
           + 'It will keep checking, and anything new shows up automatically.', true);
-    field.value = '';
+    results.innerHTML = '';
+    document.getElementById('q').value = '';
     draw(snap);
+  } catch (e) {
+    say(e.message, false);
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('add').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const field = document.getElementById('q');
+  const query = field.value.trim();
+  if (!query) return;
+  go.disabled = true;
+  results.innerHTML = '';
+  say('Looking for their careers page\\u2026', true);
+  try {
+    const res = await api('/api/companies/search', {query});
+    if (!res.matches.length) {
+      say('Couldn\\u2019t find a careers page for that. Try their exact company name, '
+          + 'or search the web for "' + query + ' careers" and paste the link here.', false);
+    } else if (res.matches.length === 1 && res.matches[0].watched) {
+      say('You\\u2019re already watching ' + res.matches[0].token + '.', true);
+    } else {
+      say('Found ' + (res.matches.length === 1 ? 'their careers page.'
+          : res.matches.length + ' possible matches \\u2014 pick the right one.'), true);
+      results.innerHTML = '<div class="found">' + res.matches.map(m =>
+        m.watched
+          ? '<div class="hit off"><b>' + esc(m.token) + '</b><span>on '
+            + esc(m.ats) + ' \\u00b7 already watching</span></div>'
+          : '<div class="hit"><div><b>' + esc(m.token) + '</b><span>on '
+            + esc(m.ats) + '</span></div>'
+            + '<button class="pick" data-ats="' + esc(m.ats) + '" data-token="'
+            + esc(m.token) + '">Add</button></div>'
+      ).join('') + '</div>';
+      document.querySelectorAll('.pick').forEach(b => b.addEventListener('click',
+        () => confirmAdd(b.dataset.ats, b.dataset.token, b)));
+    }
   } catch (e) {
     say(e.message, false);
   }

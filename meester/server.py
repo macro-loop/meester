@@ -118,7 +118,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         route = urlparse(self.path).path.rstrip("/")
-        if route not in ("/api/companies/add", "/api/companies/remove"):
+        if route not in (
+            "/api/companies/add",
+            "/api/companies/remove",
+            "/api/companies/search",
+        ):
             self._json(404, {"error": "not found"})
             return
         if not self._authed():
@@ -128,6 +132,25 @@ class Handler(BaseHTTPRequestHandler):
         body = self._read_json()
         if not isinstance(body, dict):
             self._json(400, {"error": "expected a JSON object"})
+            return
+
+        if route.endswith("/search"):
+            query = str(body.get("query", "")).strip()
+            if not query or len(query) > 200:
+                self._json(400, {"error": "type a company name or paste a careers link"})
+                return
+            matches, tried = self.ctx["search"](query)
+            already = merge(self.ctx["load_base"](), load_local(self.ctx["local_path"]))
+            self._json(
+                200,
+                {
+                    "matches": [
+                        {**m, "watched": m["token"] in (already.get(m["ats"]) or [])}
+                        for m in matches
+                    ],
+                    "tried": tried,
+                },
+            )
             return
 
         ats = str(body.get("ats", "")).strip().lower()
