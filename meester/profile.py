@@ -222,6 +222,98 @@ def save_preferences(path: Path, data: Any) -> tuple[dict[str, Any], dict[str, s
     return clean, {}
 
 
+# --- facts ledger -----------------------------------------------------------------
+# The human-verified record of her actual history. Later stages may rephrase
+# what is in here but never invent beyond it; that contract is why validation
+# is strict about shape and why save stamps verified: True - the only path to
+# a saved ledger runs through her looking at it.
+
+import json
+from datetime import datetime, timezone
+
+_L_STR = 120
+_L_BULLET = 300
+_L_SUMMARY = 1000
+
+
+def _s(value: Any, cap: int = _L_STR) -> str:
+    return str(value or "").strip()[:cap]
+
+
+def _slist(value: Any, cap_items: int, cap_chars: int = _L_STR) -> list[str]:
+    if isinstance(value, str):
+        value = value.splitlines()
+    if not isinstance(value, list):
+        return []
+    items = [_s(x, cap_chars) for x in value]
+    return [x for x in items if x][:cap_items]
+
+
+def validate_ledger(data: Any) -> dict[str, Any]:
+    """Coerce arbitrary input into a well-shaped ledger. Never raises."""
+    if not isinstance(data, dict):
+        data = {}
+    out = {
+        "name": _s(data.get("name"), 80),
+        "email": _s(data.get("email"), 120),
+        "phone": _s(data.get("phone"), 40),
+        "location": _s(data.get("location"), 120),
+        "links": _slist(data.get("links"), 6, 200),
+        "summary": _s(data.get("summary"), _L_SUMMARY),
+        "employment": [],
+        "education": [],
+        "skills": _slist(data.get("skills"), 60, 60),
+        "certifications": _slist(data.get("certifications"), 15, 120),
+        "verified": bool(data.get("verified")),
+        "saved_at": _s(data.get("saved_at"), 40),
+    }
+    for e in (data.get("employment") or [])[:30]:
+        if not isinstance(e, dict):
+            continue
+        entry = {
+            "employer": _s(e.get("employer"), 80),
+            "title": _s(e.get("title"), 80),
+            "start": _s(e.get("start"), 20),
+            "end": _s(e.get("end"), 20),
+            "bullets": _slist(e.get("bullets"), 20, _L_BULLET),
+        }
+        if entry["employer"] or entry["title"]:
+            out["employment"].append(entry)
+    for e in (data.get("education") or [])[:10]:
+        if not isinstance(e, dict):
+            continue
+        entry = {
+            "school": _s(e.get("school"), 100),
+            "degree": _s(e.get("degree"), 100),
+            "start": _s(e.get("start"), 20),
+            "end": _s(e.get("end"), 20),
+        }
+        if entry["school"] or entry["degree"]:
+            out["education"].append(entry)
+    return out
+
+
+def load_ledger(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        return validate_ledger(json.loads(path.read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_ledger(path: Path, data: Any) -> dict[str, Any]:
+    """Validate, stamp as human-verified, atomically write."""
+    clean = validate_ledger(data)
+    clean["verified"] = True
+    clean["saved_at"] = datetime.now(timezone.utc).isoformat()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(clean, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(path)
+    return clean
+
+
 def schema_for_client() -> list[dict]:
     """What the form-rendering JS needs; excludes nothing today but keeps the
     server free to add private schema fields later."""

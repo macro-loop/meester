@@ -378,6 +378,327 @@ upill.addEventListener('click', async () => {
 """
 
 
+def build_resume_page(token: str) -> str:
+    """Upload + the facts-ledger editor: the one place her history is recorded."""
+    return _RESUME_TEMPLATE.replace("__SHARED_CSS__", _SHARED_CSS).replace(
+        "__TOKEN__", token
+    )
+
+
+_RESUME_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your CV</title>
+<style>
+__SHARED_CSS__
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin:26px 0 18px}
+  .topbar a.back{margin:0}
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;
+    padding:20px;margin:18px 0}
+  .panel h2{font-size:16px;margin:0 0 6px;font-weight:640}
+  .panel p.hint{color:var(--muted);font-size:13.5px;margin:0 0 14px}
+  button{font-family:inherit;font-size:14.5px;font-weight:600;padding:9px 16px;
+    border-radius:6px;border:1px solid var(--accent);background:var(--accent);
+    color:#fff;cursor:pointer}
+  button.ghost{background:none;color:var(--accent)}
+  button.tiny{padding:4px 9px;font-size:12.5px;font-weight:550}
+  button:disabled{opacity:.55;cursor:default}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) button{color:#0A121A}
+    :root:not([data-theme="light"]) button.ghost{color:var(--accent)}
+  }
+  .filemeta{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:14.5px}
+  .filemeta b{font-weight:640}
+  .filemeta a{color:var(--accent)}
+  label{display:block;font-size:13px;font-weight:600;margin-bottom:4px}
+  input[type=text],textarea{width:100%;padding:9px 11px;font-size:14.5px;
+    font-family:inherit;color:var(--ink);background:var(--ground);
+    border:1px solid var(--line);border-radius:6px;-webkit-appearance:none}
+  textarea{resize:vertical;line-height:1.5}
+  input:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid4{display:grid;grid-template-columns:2fr 2fr 1fr 1fr;gap:10px}
+  @media (max-width:640px){.grid4{grid-template-columns:1fr 1fr}}
+  .field{margin-bottom:14px}
+  .card{border:1px solid var(--line);border-radius:8px;padding:14px;margin:12px 0;
+    background:var(--ground)}
+  .cardbar{display:flex;justify-content:flex-end;gap:6px;margin-bottom:8px}
+  .cardbar .spacer{margin-right:auto;font-family:var(--mono);font-size:10.5px;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--muted);align-self:center}
+  .savebar{position:sticky;bottom:0;background:var(--ground);padding:14px 0 18px;
+    border-top:1px solid var(--line);display:flex;gap:14px;align-items:center}
+  .msg{padding:10px 14px;border-radius:6px;font-size:14px;display:none;flex:1}
+  .msg.ok{display:block;background:var(--accent-soft);border-left:2px solid var(--accent)}
+  .msg.err{display:block;background:var(--bad-soft);border-left:2px solid var(--bad)}
+  .verified{font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div><a class="back" href="/jobs">&larr; Back to jobs</a>&ensp;&middot;&ensp;<a class="back" href="/profile">Your profile</a></div>
+  </div>
+  <h1>Your CV</h1>
+  <p class="sub">The file you send out, and the record of what's actually in it.
+    Both stay on this Mac.</p>
+
+  <div class="panel">
+    <h2>The file</h2>
+    <p class="hint">Upload the CV you actually send out. It's read for facts,
+      never rewritten &mdash; tailored versions are built as new documents.</p>
+    <div class="filemeta" id="filemeta">Loading&hellip;</div>
+    <input type="file" id="file" accept=".pdf,.docx" hidden>
+  </div>
+
+  <div class="panel">
+    <h2>The record</h2>
+    <p class="hint">This is what matching and (later) tailored applications treat
+      as the truth about your history &mdash; nothing gets claimed that isn't in
+      here. The read-in is rough on purpose: <b>correct it, don't trust it.</b></p>
+    <div id="editorwrap"><p class="hint" id="editorempty">Upload the file above,
+      then read it in &mdash; or start from scratch.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button id="extract" disabled>Read my CV into the editor</button>
+        <button class="ghost" id="scratch">Start from scratch</button>
+      </div>
+    </div>
+    <div id="editor" hidden></div>
+  </div>
+
+  <div class="savebar" id="savebar" hidden>
+    <button id="save">Save the record</button>
+    <div class="msg" id="msg"></div>
+    <span class="verified" id="verified"></span>
+  </div>
+</div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const msg = document.getElementById('msg');
+
+function say(text, ok) {
+  msg.textContent = text;
+  msg.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? {'Content-Type':'application/json','X-Meester-Token':TOKEN} : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('request failed (' + res.status + ')'));
+  return data;
+}
+
+// ---- the file -------------------------------------------------------------
+
+const fileInput = document.getElementById('file');
+let HAS_RESUME = false;
+
+function drawFile(resume) {
+  HAS_RESUME = !!resume;
+  document.getElementById('extract').disabled = !HAS_RESUME;
+  const el = document.getElementById('filemeta');
+  if (!resume) {
+    el.innerHTML = '<button id="upl">Upload your CV</button>'
+      + '<span class="hint" style="margin:0">PDF or Word, up to 15 MB</span>';
+  } else {
+    el.innerHTML = '<b>resume.' + esc(resume.kind) + '</b>'
+      + '<span>' + Math.round(resume.bytes / 1024) + ' KB</span>'
+      + '<a href="/files/resume" target="_blank" rel="noopener">Open</a>'
+      + '<button class="ghost" id="upl">Replace</button>';
+  }
+  document.getElementById('upl').addEventListener('click', () => fileInput.click());
+}
+
+fileInput.addEventListener('change', () => {
+  const f = fileInput.files[0];
+  if (!f) return;
+  if (f.size > 15000000) { say('That file is over 15 MB.', false); return; }
+  say('Uploading ' + f.name + '\\u2026', true);
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const b64 = String(reader.result).split(',')[1] || '';
+      const res = await api('/api/profile/resume', {content_b64: b64});
+      if (!res.ok) { say(res.error, false); return; }
+      say('Uploaded. Now read it into the editor and correct what it got wrong.', true);
+      drawFile({kind: res.kind, bytes: res.bytes});
+    } catch (e) { say(e.message, false); }
+    fileInput.value = '';
+  };
+  reader.readAsDataURL(f);
+});
+
+// ---- the editor -----------------------------------------------------------
+
+function bulletsText(list) { return (list || []).join('\\n'); }
+
+function jobCard(e, i, n) {
+  return '<div class="card" data-kind="job">'
+    + '<div class="cardbar"><span class="spacer">Job ' + (i + 1) + '</span>'
+    + (i > 0 ? '<button class="tiny ghost" data-act="up">\\u2191</button>' : '')
+    + (i < n - 1 ? '<button class="tiny ghost" data-act="down">\\u2193</button>' : '')
+    + '<button class="tiny ghost" data-act="del">Remove</button></div>'
+    + '<div class="grid4">'
+    + '<div><label>Employer</label><input type="text" data-f="employer" value="' + esc(e.employer) + '"></div>'
+    + '<div><label>Title</label><input type="text" data-f="title" value="' + esc(e.title) + '"></div>'
+    + '<div><label>From</label><input type="text" data-f="start" placeholder="2021" value="' + esc(e.start) + '"></div>'
+    + '<div><label>Until</label><input type="text" data-f="end" placeholder="present" value="' + esc(e.end) + '"></div>'
+    + '</div>'
+    + '<div style="margin-top:10px"><label>What you did there \\u2014 one point per line</label>'
+    + '<textarea rows="4" data-f="bullets">' + esc(bulletsText(e.bullets)) + '</textarea></div>'
+    + '</div>';
+}
+
+function eduCard(e, i, n) {
+  return '<div class="card" data-kind="edu">'
+    + '<div class="cardbar"><span class="spacer">Education ' + (i + 1) + '</span>'
+    + '<button class="tiny ghost" data-act="del">Remove</button></div>'
+    + '<div class="grid4">'
+    + '<div><label>School</label><input type="text" data-f="school" value="' + esc(e.school) + '"></div>'
+    + '<div><label>Degree</label><input type="text" data-f="degree" value="' + esc(e.degree) + '"></div>'
+    + '<div><label>From</label><input type="text" data-f="start" value="' + esc(e.start) + '"></div>'
+    + '<div><label>Until</label><input type="text" data-f="end" value="' + esc(e.end) + '"></div>'
+    + '</div></div>';
+}
+
+function render(L) {
+  const el = document.getElementById('editor');
+  el.innerHTML =
+    '<div class="grid2" style="margin-top:6px">'
+    + '<div class="field"><label>Name</label><input type="text" id="l_name" value="' + esc(L.name) + '"></div>'
+    + '<div class="field"><label>Email on applications</label><input type="text" id="l_email" value="' + esc(L.email) + '"></div>'
+    + '<div class="field"><label>Phone</label><input type="text" id="l_phone" value="' + esc(L.phone) + '"></div>'
+    + '<div class="field"><label>Location</label><input type="text" id="l_location" placeholder="City, Country" value="' + esc(L.location) + '"></div>'
+    + '</div>'
+    + '<div class="field"><label>Links \\u2014 one per line</label><textarea rows="2" id="l_links">' + esc((L.links || []).join('\\n')) + '</textarea></div>'
+    + '<div class="field"><label>Summary</label><textarea rows="3" id="l_summary">' + esc(L.summary) + '</textarea></div>'
+    + '<h2 style="margin-top:22px">Employment</h2>'
+    + '<div id="jobs">' + (L.employment || []).map((e, i, a) => jobCard(e, i, a.length)).join('') + '</div>'
+    + '<button class="ghost" id="addjob">+ Add a job</button>'
+    + '<h2 style="margin-top:22px">Education</h2>'
+    + '<div id="edus">' + (L.education || []).map((e, i, a) => eduCard(e, i, a.length)).join('') + '</div>'
+    + '<button class="ghost" id="addedu">+ Add education</button>'
+    + '<div class="grid2" style="margin-top:22px">'
+    + '<div class="field"><label>Skills \\u2014 one per line</label><textarea rows="6" id="l_skills">' + esc((L.skills || []).join('\\n')) + '</textarea></div>'
+    + '<div class="field"><label>Certifications \\u2014 one per line</label><textarea rows="6" id="l_certs">' + esc((L.certifications || []).join('\\n')) + '</textarea></div>'
+    + '</div>';
+  el.hidden = false;
+  document.getElementById('editorwrap').hidden = true;
+  document.getElementById('savebar').hidden = false;
+
+  document.getElementById('addjob').addEventListener('click', () => {
+    const L2 = collect();
+    L2.employment.push({employer:'', title:'', start:'', end:'', bullets:[]});
+    render(L2);
+  });
+  document.getElementById('addedu').addEventListener('click', () => {
+    const L2 = collect();
+    L2.education.push({school:'', degree:'', start:'', end:''});
+    render(L2);
+  });
+  el.querySelectorAll('.card [data-act]').forEach(b => b.addEventListener('click', () => {
+    const card = b.closest('.card');
+    const kind = card.dataset.kind;
+    const list = Array.from(el.querySelectorAll('.card[data-kind="' + kind + '"]'));
+    const idx = list.indexOf(card);
+    const L2 = collect();
+    const arr = kind === 'job' ? L2.employment : L2.education;
+    if (b.dataset.act === 'del') arr.splice(idx, 1);
+    if (b.dataset.act === 'up' && idx > 0) arr.splice(idx - 1, 0, arr.splice(idx, 1)[0]);
+    if (b.dataset.act === 'down' && idx < arr.length - 1) arr.splice(idx + 1, 0, arr.splice(idx, 1)[0]);
+    render(L2);
+  }));
+}
+
+function lines(id) {
+  return document.getElementById(id).value.split('\\n').map(s => s.trim()).filter(Boolean);
+}
+
+function collect() {
+  const el = document.getElementById('editor');
+  const grab = (card, f) => card.querySelector('[data-f="' + f + '"]').value.trim();
+  return {
+    name: document.getElementById('l_name').value.trim(),
+    email: document.getElementById('l_email').value.trim(),
+    phone: document.getElementById('l_phone').value.trim(),
+    location: document.getElementById('l_location').value.trim(),
+    links: lines('l_links'),
+    summary: document.getElementById('l_summary').value.trim(),
+    employment: Array.from(el.querySelectorAll('.card[data-kind="job"]')).map(c => ({
+      employer: grab(c, 'employer'), title: grab(c, 'title'),
+      start: grab(c, 'start'), end: grab(c, 'end'),
+      bullets: c.querySelector('[data-f="bullets"]').value.split('\\n').map(s => s.trim()).filter(Boolean),
+    })),
+    education: Array.from(el.querySelectorAll('.card[data-kind="edu"]')).map(c => ({
+      school: grab(c, 'school'), degree: grab(c, 'degree'),
+      start: grab(c, 'start'), end: grab(c, 'end'),
+    })),
+    skills: lines('l_skills'),
+    certifications: lines('l_certs'),
+  };
+}
+
+document.getElementById('extract').addEventListener('click', async () => {
+  const btn = document.getElementById('extract');
+  if (!document.getElementById('editor').hidden
+      && !confirm('Replace what is in the editor with a fresh read of the file?')) return;
+  btn.disabled = true;
+  say('Reading the file\\u2026', true);
+  try {
+    const res = await api('/api/profile/resume/extract', {});
+    if (!res.ok) { say(res.error, false); btn.disabled = false; return; }
+    render(res.draft);
+    say('Read in. Now correct it \\u2014 employer names, dates and bullets \\u2014 then save.', true);
+  } catch (e) { say(e.message, false); }
+  btn.disabled = false;
+});
+
+document.getElementById('scratch').addEventListener('click', () => {
+  render({name:'',email:'',phone:'',location:'',links:[],summary:'',
+          employment:[{employer:'',title:'',start:'',end:'',bullets:[]}],
+          education:[], skills:[], certifications:[]});
+});
+
+document.getElementById('save').addEventListener('click', async () => {
+  const btn = document.getElementById('save');
+  btn.disabled = true;
+  try {
+    const res = await api('/api/profile/ledger', collect());
+    if (res.ok) {
+      say('Saved. This is now the record everything else works from.', true);
+      drawVerified(res.ledger);
+    } else { say(res.error || 'Save failed', false); }
+  } catch (e) { say(e.message, false); }
+  btn.disabled = false;
+});
+
+function drawVerified(L) {
+  const el = document.getElementById('verified');
+  el.textContent = (L && L.saved_at)
+    ? 'Checked by you \\u00b7 ' + L.saved_at.slice(0, 10) : '';
+}
+
+api('/api/profile/ledger').then(d => {
+  drawFile(d.resume);
+  if (d.ledger) { render(d.ledger); drawVerified(d.ledger); }
+}).catch(e => say(e.message, false));
+</script>
+</body>
+</html>
+"""
+
+
 def build_profile_page(token: str) -> str:
     """The preferences form. Rendered entirely from the schema the server
     sends, so a new preference field needs zero template changes."""
@@ -436,7 +757,7 @@ __SHARED_CSS__
 <body>
 <div class="wrap">
   <div class="topbar">
-    <div><a class="back" href="/jobs">&larr; Back to jobs</a>&ensp;&middot;&ensp;<a class="back" href="/companies">Companies</a></div>
+    <div><a class="back" href="/jobs">&larr; Back to jobs</a>&ensp;&middot;&ensp;<a class="back" href="/resume">Your CV</a>&ensp;&middot;&ensp;<a class="back" href="/companies">Companies</a></div>
     <button class="upill" id="upill" hidden>Update available &mdash; install</button>
   </div>
   <h1>Your profile</h1>
@@ -669,6 +990,7 @@ _TEMPLATE = """<!doctype html>
       <div class="stat"><b>{companies}</b><span>Companies</span></div>
       <div class="navlinks" id="navlinks" hidden>
         <a class="manage" href="http://127.0.0.1:8765/profile">Your profile</a>
+        <a class="manage" href="http://127.0.0.1:8765/resume">Your CV</a>
         <a class="manage" href="http://127.0.0.1:8765/companies">Add companies &rarr;</a>
         <button class="upill" id="upill" hidden>Update available</button>
       </div>

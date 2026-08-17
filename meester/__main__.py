@@ -168,7 +168,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from .harvest.base import BoardClient
     from .harvest.run import FETCHERS
     from .profile import load_preferences, save_preferences, schema_for_client
-    from .report import build_companies_page, build_profile_page, build_report
+    from .report import build_companies_page, build_profile_page, build_report, build_resume_page
     from .server import serve
 
     settings = _load("settings.yaml")
@@ -290,6 +290,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
         return result
 
     prefs_path = ROOT / "profile" / "preferences.yaml"
+    profile_dir = ROOT / "profile"
+    ledger_path = profile_dir / "facts_ledger.json"
 
     def prefs_get() -> dict:
         return {"fields": schema_for_client(), "values": load_preferences(prefs_path)}
@@ -299,6 +301,80 @@ def cmd_serve(args: argparse.Namespace) -> int:
         if errors:
             return {"ok": False, "errors": errors}
         return {"ok": True, "values": clean}
+
+    def _stored_resume() -> Path | None:
+        for name in ("resume.pdf", "resume.docx"):
+            if (profile_dir / name).exists():
+                return profile_dir / name
+        return None
+
+    def resume_file() -> tuple[bytes, str] | None:
+        path = _stored_resume()
+        if path is None:
+            return None
+        ctype = (
+            "application/pdf"
+            if path.suffix == ".pdf"
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        return path.read_bytes(), ctype
+
+    def resume_save(body: dict) -> dict:
+        import base64
+
+        from .extract import sniff_kind
+
+        try:
+            data = base64.b64decode(str(body.get("content_b64", "")), validate=True)
+        except (ValueError, TypeError):
+            return {"ok": False, "error": "the file didn't upload cleanly - try again"}
+        if not data or len(data) > 15_000_000:
+            return {"ok": False, "error": "that file is empty or larger than 15 MB"}
+
+        kind = sniff_kind(data)  # trusts bytes, never the filename she picked
+        if not kind:
+            return {"ok": False, "error": "that doesn't look like a PDF or Word file"}
+
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        target = profile_dir / f"resume.{kind}"
+        other = profile_dir / ("resume.docx" if kind == "pdf" else "resume.pdf")
+        tmp = target.with_suffix(".tmp")
+        tmp.write_bytes(data)
+        tmp.replace(target)
+        other.unlink(missing_ok=True)
+        return {"ok": True, "kind": kind, "bytes": len(data)}
+
+    def resume_extract() -> dict:
+        from .extract import draft_ledger, to_text
+
+        path = _stored_resume()
+        if path is None:
+            return {"ok": False, "error": "upload a CV first"}
+        try:
+            kind, text = to_text(path.read_bytes())
+        except Exception as exc:  # noqa: BLE001 - a weird PDF must not 500
+            return {"ok": False, "error": f"couldn't read that file ({type(exc).__name__})"}
+        if not text.strip():
+            return {
+                "ok": False,
+                "error": "no text found - this looks like a scanned image rather "
+                "than a text PDF. Fill the sections in by hand instead.",
+            }
+        return {"ok": True, "draft": draft_ledger(text)}
+
+    def ledger_get() -> dict:
+        from .profile import load_ledger
+
+        path = _stored_resume()
+        return {
+            "ledger": load_ledger(ledger_path),
+            "resume": {"kind": path.suffix[1:], "bytes": path.stat().st_size} if path else None,
+        }
+
+    def ledger_save(body: dict) -> dict:
+        from .profile import save_ledger
+
+        return {"ok": True, "ledger": save_ledger(ledger_path, body)}
 
     ctx = {
         "render_report": render_report,
@@ -313,6 +389,12 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "render_profile": build_profile_page,
         "prefs_get": prefs_get,
         "prefs_save": prefs_save,
+        "render_resume": build_resume_page,
+        "resume_file": resume_file,
+        "resume_save": resume_save,
+        "resume_extract": resume_extract,
+        "ledger_get": ledger_get,
+        "ledger_save": ledger_save,
     }
 
     httpd = serve(ctx, port=args.port)

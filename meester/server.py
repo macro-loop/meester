@@ -99,12 +99,12 @@ class Handler(BaseHTTPRequestHandler):
             )
         )
 
-    def _read_json(self) -> dict | None:
+    def _read_json(self, max_bytes: int = MAX_BODY) -> dict | None:
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             return None
-        if length <= 0 or length > MAX_BODY:
+        if length <= 0 or length > max_bytes:
             return None
         try:
             return json.loads(self.rfile.read(length).decode("utf-8"))
@@ -127,8 +127,26 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/profile":
             html = self.ctx["render_profile"](self.ctx["token"])
             self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+        elif route == "/resume":
+            html = self.ctx["render_resume"](self.ctx["token"])
+            self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
         elif route == "/api/profile/preferences":
             self._json(200, self.ctx["prefs_get"]())
+        elif route == "/api/profile/ledger":
+            self._json(200, self.ctx["ledger_get"]())
+        elif route == "/files/resume":
+            stored = self.ctx["resume_file"]()
+            if stored is None:
+                self._json(404, {"error": "no CV uploaded yet"})
+            else:
+                data, ctype = stored
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Content-Disposition", "inline; filename=resume")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                self.wfile.write(data)
         elif route == "/api/ping":
             self._json(200, {"ok": True}, cors=True)
         elif route == "/api/status":
@@ -153,11 +171,39 @@ class Handler(BaseHTTPRequestHandler):
             "/api/companies/search",
             "/api/update",
             "/api/profile/preferences",
+            "/api/profile/resume",
+            "/api/profile/resume/extract",
+            "/api/profile/ledger",
         ):
             self._json(404, {"error": "not found"})
             return
         if not self._authed():
             self._json(403, {"error": "bad or missing token"})
+            return
+
+        if route == "/api/profile/resume":
+            # The one route allowed a large body: a base64 PDF. Everything else
+            # keeps the tight cap so no other endpoint can be used to buffer
+            # megabytes.
+            body = self._read_json(max_bytes=self.ctx.get("resume_max_bytes", 20_000_000))
+            if not isinstance(body, dict):
+                self._json(400, {"error": "that file is too large - 15 MB is the limit"})
+                return
+            self._json(200, self.ctx["resume_save"](body))
+            return
+
+        if route == "/api/profile/resume/extract":
+            self._json(200, self.ctx["resume_extract"]())
+            return
+
+        if route == "/api/profile/ledger":
+            # A full ledger (30 employers x 20 bullets) legitimately exceeds the
+            # default cap; give it headroom without opening the floodgates.
+            body = self._read_json(max_bytes=512_000)
+            if not isinstance(body, dict):
+                self._json(400, {"error": "expected a JSON object"})
+                return
+            self._json(200, self.ctx["ledger_save"](body))
             return
 
         if route == "/api/update":

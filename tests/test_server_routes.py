@@ -97,6 +97,13 @@ def test_update_response_arrives_complete_before_the_restart_hook(live):
     assert data == {"ok": True, "changed": True, "old": "aaa", "new": "bbb",
                     "restarting": True}
     assert "_after_response" not in data
+    # The hook is *supposed* to run after the response is on the wire, so the
+    # client observing the payload before the counter ticks is by design - poll
+    # briefly rather than racing the handler thread.
+    import time
+    deadline = time.monotonic() + 5
+    while calls["after"] != 1 and time.monotonic() < deadline:
+        time.sleep(0.05)
     assert calls["after"] == 1
 
 
