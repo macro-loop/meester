@@ -438,7 +438,7 @@ __SHARED_CSS__
 <body>
 <div class="wrap">
   <div class="topbar">
-    <div><a class="back" href="/jobs">&larr; Back to jobs</a>&ensp;&middot;&ensp;<a class="back" href="/profile">Your profile</a></div>
+    <div><a class="back" href="/jobs">&larr; Back to jobs</a>&ensp;&middot;&ensp;<a class="back" href="/profile">Your profile</a>&ensp;&middot;&ensp;<a class="back" href="/letters">Letters</a></div>
   </div>
   <h1>Your CV</h1>
   <p class="sub">The file you send out, and the record of what's actually in it.
@@ -699,6 +699,216 @@ api('/api/profile/ledger').then(d => {
 """
 
 
+def build_letters_page(token: str) -> str:
+    """Named cover-letter templates the tailoring stage will fill per job."""
+    return _LETTERS_TEMPLATE.replace("__SHARED_CSS__", _SHARED_CSS).replace(
+        "__TOKEN__", token
+    )
+
+
+_LETTERS_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cover letters</title>
+<style>
+__SHARED_CSS__
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin:26px 0 18px}
+  .topbar a.back{margin:0}
+  button{font-family:inherit;font-size:14.5px;font-weight:600;padding:9px 16px;
+    border-radius:6px;border:1px solid var(--accent);background:var(--accent);
+    color:#fff;cursor:pointer}
+  button.ghost{background:none;color:var(--accent)}
+  button.tiny{padding:4px 9px;font-size:12.5px;font-weight:550}
+  button:disabled{opacity:.55;cursor:default}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) button{color:#0A121A}
+    :root:not([data-theme="light"]) button.ghost{color:var(--accent)}
+  }
+  .legend{background:var(--surface);border:1px solid var(--line);border-radius:8px;
+    padding:14px 18px;margin:18px 0;font-size:13.5px;color:var(--soft)}
+  .legend code{font-family:var(--mono);font-size:12.5px;background:var(--accent-soft);
+    border-radius:4px;padding:1px 6px;color:var(--accent)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;
+    padding:18px;margin:14px 0}
+  .cardbar{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+  .cardbar input{flex:1;font-weight:600}
+  label{display:block;font-size:13px;font-weight:600;margin-bottom:4px}
+  input[type=text],textarea{width:100%;padding:9px 11px;font-size:14.5px;
+    font-family:inherit;color:var(--ink);background:var(--ground);
+    border:1px solid var(--line);border-radius:6px;-webkit-appearance:none}
+  textarea{resize:vertical;line-height:1.55;min-height:130px}
+  input:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+  .meta{display:flex;gap:14px;margin-top:6px;font-size:12.5px;color:var(--muted);
+    flex-wrap:wrap}
+  .meta .warn{color:var(--bad)}
+  .meta .long{color:var(--bad)}
+  .preview{margin-top:12px;border-left:2px solid var(--line);padding:2px 0 2px 14px;
+    font-size:14px;color:var(--soft);white-space:pre-wrap}
+  .preview .fill{color:var(--accent);font-weight:600}
+  .preview .todo{background:var(--accent-soft);color:var(--accent);border-radius:4px;
+    padding:0 5px;font-size:12.5px}
+  .savebar{position:sticky;bottom:0;background:var(--ground);padding:14px 0 18px;
+    border-top:1px solid var(--line);display:flex;gap:14px;align-items:center}
+  .msg{padding:10px 14px;border-radius:6px;font-size:14px;display:none;flex:1}
+  .msg.ok{display:block;background:var(--accent-soft);border-left:2px solid var(--accent)}
+  .msg.err{display:block;background:var(--bad-soft);border-left:2px solid var(--bad)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div><a class="back" href="/jobs">&larr; Back to jobs</a>&ensp;&middot;&ensp;<a class="back" href="/profile">Your profile</a>&ensp;&middot;&ensp;<a class="back" href="/resume">Your CV</a></div>
+  </div>
+  <h1>Cover letters</h1>
+  <p class="sub">A few variations in your own voice &mdash; formal, warmer, role-specific.
+    When an application needs a letter, one of these gets picked and filled for
+    that exact job. Under 150 words reads best; a letter is a knock on the door,
+    not the interview.</p>
+
+  <div class="legend">These fill themselves in per job:
+    <code>{company}</code> the company's name &middot;
+    <code>{role}</code> the job title &middot;
+    <code>{their_product}</code> what they make &middot;
+    <code>{why_them}</code> a specific, true reason &mdash; written fresh for each
+    application, never boilerplate.</div>
+
+  <div id="cards"></div>
+  <button class="ghost" id="add">+ Add a variation</button>
+
+  <div class="savebar">
+    <button id="save">Save letters</button>
+    <div class="msg" id="msg"></div>
+  </div>
+</div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const KNOWN = ['company', 'role', 'their_product', 'why_them'];
+let SAMPLE = {company: 'Figma', role: 'Product Designer'};
+const msg = document.getElementById('msg');
+
+function say(text, ok) {
+  msg.textContent = text;
+  msg.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? {'Content-Type':'application/json','X-Meester-Token':TOKEN} : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('request failed (' + res.status + ')'));
+  return data;
+}
+
+function words(text) { return (text.trim().match(/\\S+/g) || []).length; }
+
+function unknownPlaceholders(text) {
+  const seen = new Set();
+  (text.match(/\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}/g) || []).forEach(m => {
+    const name = m.slice(1, -1);
+    if (!KNOWN.includes(name)) seen.add(m);
+  });
+  return Array.from(seen);
+}
+
+function previewHtml(text) {
+  // Fill company/role from a real posting in her list; mark the per-job parts.
+  return esc(text)
+    .replace(/\\{company\\}/g, '<span class="fill">' + esc(SAMPLE.company) + '</span>')
+    .replace(/\\{role\\}/g, '<span class="fill">' + esc(SAMPLE.role) + '</span>')
+    .replace(/\\{their_product\\}/g, '<span class="todo">what they make - written per job</span>')
+    .replace(/\\{why_them\\}/g, '<span class="todo">a specific true reason - written per job</span>');
+}
+
+function refreshMeta(card) {
+  const body = card.querySelector('textarea').value;
+  const n = words(body);
+  const wEl = card.querySelector('[data-m="words"]');
+  wEl.textContent = n + ' words';
+  wEl.className = n > 180 ? 'long' : '';
+  if (n > 180) wEl.textContent += ' - long for a letter nobody asked for';
+  const unknown = unknownPlaceholders(body);
+  card.querySelector('[data-m="lint"]').textContent =
+    unknown.length ? 'Unknown placeholder ' + unknown.join(', ') + ' - it would appear literally' : '';
+  card.querySelector('.preview').innerHTML =
+    previewHtml(body) || '<span class="todo">empty</span>';
+}
+
+function card(letter) {
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.innerHTML =
+    '<div class="cardbar">'
+    + '<input type="text" data-f="name" placeholder="Name this variation" value="' + esc(letter.name) + '">'
+    + '<button class="tiny ghost" data-act="del">Remove</button></div>'
+    + '<textarea data-f="body">' + esc(letter.body) + '</textarea>'
+    + '<div class="meta"><span data-m="words"></span><span class="warn" data-m="lint"></span></div>'
+    + '<label style="margin-top:12px">How it reads for <b>' + esc(SAMPLE.role) + '</b> at <b>'
+    + esc(SAMPLE.company) + '</b> \\u2014 a real posting from your list</label>'
+    + '<div class="preview"></div>';
+  el.querySelector('textarea').addEventListener('input', () => refreshMeta(el));
+  el.querySelector('[data-act="del"]').addEventListener('click', () => {
+    if (el.querySelector('textarea').value.trim()
+        && !confirm('Remove this letter? Its text is gone once you save.')) return;
+    el.remove();
+  });
+  refreshMeta(el);
+  return el;
+}
+
+function render(letters) {
+  const wrap = document.getElementById('cards');
+  wrap.innerHTML = '';
+  letters.forEach(l => wrap.appendChild(card(l)));
+}
+
+function collect() {
+  return {letters: Array.from(document.querySelectorAll('.card')).map(c => ({
+    name: c.querySelector('[data-f="name"]').value.trim(),
+    body: c.querySelector('[data-f="body"]').value,
+  }))};
+}
+
+document.getElementById('add').addEventListener('click', () => {
+  document.getElementById('cards').appendChild(card({name: '', body: ''}));
+});
+
+document.getElementById('save').addEventListener('click', async () => {
+  const btn = document.getElementById('save');
+  btn.disabled = true;
+  try {
+    const res = await api('/api/profile/letters', collect());
+    if (res.ok) {
+      render(res.letters);
+      say('Saved \\u2014 ' + res.letters.length + ' letter'
+          + (res.letters.length === 1 ? '' : 's') + ' ready to be used.', true);
+    } else {
+      say(Object.values(res.errors).join(' '), false);
+    }
+  } catch (e) { say(e.message, false); }
+  btn.disabled = false;
+});
+
+api('/api/profile/letters').then(d => {
+  SAMPLE = d.sample || SAMPLE;
+  render(d.letters);
+}).catch(e => say(e.message, false));
+</script>
+</body>
+</html>
+"""
+
+
 def build_profile_page(token: str) -> str:
     """The preferences form. Rendered entirely from the schema the server
     sends, so a new preference field needs zero template changes."""
@@ -757,7 +967,7 @@ __SHARED_CSS__
 <body>
 <div class="wrap">
   <div class="topbar">
-    <div><a class="back" href="/jobs">&larr; Back to jobs</a>&ensp;&middot;&ensp;<a class="back" href="/resume">Your CV</a>&ensp;&middot;&ensp;<a class="back" href="/companies">Companies</a></div>
+    <div><a class="back" href="/jobs">&larr; Back to jobs</a>&ensp;&middot;&ensp;<a class="back" href="/resume">Your CV</a>&ensp;&middot;&ensp;<a class="back" href="/letters">Letters</a>&ensp;&middot;&ensp;<a class="back" href="/companies">Companies</a></div>
     <button class="upill" id="upill" hidden>Update available &mdash; install</button>
   </div>
   <h1>Your profile</h1>
@@ -991,6 +1201,7 @@ _TEMPLATE = """<!doctype html>
       <div class="navlinks" id="navlinks" hidden>
         <a class="manage" href="http://127.0.0.1:8765/profile">Your profile</a>
         <a class="manage" href="http://127.0.0.1:8765/resume">Your CV</a>
+        <a class="manage" href="http://127.0.0.1:8765/letters">Letters</a>
         <a class="manage" href="http://127.0.0.1:8765/companies">Add companies &rarr;</a>
         <button class="upill" id="upill" hidden>Update available</button>
       </div>

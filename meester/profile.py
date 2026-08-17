@@ -10,6 +10,7 @@ is the documented contract and some people will still edit YAML by hand.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -312,6 +313,97 @@ def save_ledger(path: Path, data: Any) -> dict[str, Any]:
     tmp.write_text(json.dumps(clean, ensure_ascii=False, indent=1), encoding="utf-8")
     tmp.replace(path)
     return clean
+
+
+# --- cover letter templates -------------------------------------------------------
+# Named variations the tailoring stage will pick from and fill. Placeholders are
+# the contract between what she writes now and what gets generated per job later.
+
+KNOWN_PLACEHOLDERS = {"company", "role", "their_product", "why_them"}
+_PLACEHOLDER = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+_MAX_LETTERS = 12
+_MAX_LETTER_CHARS = 3000
+
+STARTER_LETTERS = [
+    {
+        "name": "Straightforward",
+        "body": (
+            "I'm applying for the {role} role at {company}.\n\n"
+            "{why_them}\n\n"
+            "My background fits what you're looking for, and I'd be glad to show "
+            "how in a conversation. Thanks for reading.\n"
+        ),
+    },
+    {
+        "name": "Warmer",
+        "body": (
+            "Hello {company} team,\n\n"
+            "I've been following {their_product} for a while, so seeing the "
+            "{role} opening was an easy yes. {why_them}\n\n"
+            "I'd love to talk.\n"
+        ),
+    },
+]
+
+
+def lint_placeholders(body: str) -> list[str]:
+    """Unknown {placeholders} in a template - warned about, never blocked,
+    because a stray {typo} reaching a real application is embarrassing but a
+    blocked save that eats her writing is worse."""
+    return sorted({m for m in _PLACEHOLDER.findall(body or "") if m not in KNOWN_PLACEHOLDERS})
+
+
+def validate_letters(data: Any) -> tuple[list[dict], dict[str, str]]:
+    raw = data.get("letters") if isinstance(data, dict) else data
+    if not isinstance(raw, list):
+        return [], {"letters": "expected a list of letters"}
+    clean: list[dict] = []
+    errors: dict[str, str] = {}
+    seen_names: set[str] = set()
+    for i, item in enumerate(raw[:_MAX_LETTERS]):
+        if not isinstance(item, dict):
+            continue
+        name = _s(item.get("name"), 60) or f"Letter {i + 1}"
+        body = str(item.get("body") or "")[:_MAX_LETTER_CHARS]
+        if not body.strip():
+            errors[str(i)] = "this letter is empty - write it or remove it"
+            continue
+        base, n = name, 2
+        while name.lower() in seen_names:
+            name = f"{base} ({n})"
+            n += 1
+        seen_names.add(name.lower())
+        clean.append({"name": name, "body": body})
+    return clean, errors
+
+
+def load_letters(path: Path) -> list[dict]:
+    """Seeded with two starters on first read, so she edits instead of facing
+    a blank page."""
+    if not path.exists():
+        return [dict(x) for x in STARTER_LETTERS]
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return [dict(x) for x in STARTER_LETTERS]
+    clean, _ = validate_letters(raw)
+    return clean or [dict(x) for x in STARTER_LETTERS]
+
+
+def save_letters(path: Path, data: Any) -> tuple[list[dict], dict[str, str]]:
+    clean, errors = validate_letters(data)
+    if errors:
+        return clean, errors
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(
+        "# Cover letter templates, edited from the Letters screen.\n"
+        "# {company} {role} {their_product} {why_them} are filled per job later.\n\n"
+        + yaml.safe_dump({"letters": clean}, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+    return clean, {}
 
 
 def schema_for_client() -> list[dict]:

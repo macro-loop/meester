@@ -130,6 +130,11 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/resume":
             html = self.ctx["render_resume"](self.ctx["token"])
             self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+        elif route == "/letters":
+            html = self.ctx["render_letters"](self.ctx["token"])
+            self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+        elif route == "/api/profile/letters":
+            self._json(200, self.ctx["letters_get"]())
         elif route == "/api/profile/preferences":
             self._json(200, self.ctx["prefs_get"]())
         elif route == "/api/profile/ledger":
@@ -174,6 +179,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/profile/resume",
             "/api/profile/resume/extract",
             "/api/profile/ledger",
+            "/api/profile/letters",
         ):
             self._json(404, {"error": "not found"})
             return
@@ -204,6 +210,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": "expected a JSON object"})
                 return
             self._json(200, self.ctx["ledger_save"](body))
+            return
+
+        if route == "/api/profile/letters":
+            body = self._read_json(max_bytes=128_000)
+            if not isinstance(body, dict):
+                self._json(400, {"error": "expected a JSON object"})
+                return
+            self._json(200, self.ctx["letters_save"](body))
             return
 
         if route == "/api/update":

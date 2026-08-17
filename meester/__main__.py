@@ -168,7 +168,13 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from .harvest.base import BoardClient
     from .harvest.run import FETCHERS
     from .profile import load_preferences, save_preferences, schema_for_client
-    from .report import build_companies_page, build_profile_page, build_report, build_resume_page
+    from .report import (
+        build_companies_page,
+        build_letters_page,
+        build_profile_page,
+        build_report,
+        build_resume_page,
+    )
     from .server import serve
 
     settings = _load("settings.yaml")
@@ -376,6 +382,44 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
         return {"ok": True, "ledger": save_ledger(ledger_path, body)}
 
+    letters_path = profile_dir / "cover_letters.yaml"
+
+    def _sample_job() -> dict:
+        """A real posting from the store, so letter previews use a job she has
+        actually seen rather than an invented one."""
+        try:
+            with store_path.open(encoding="utf-8") as fh:
+                for line in fh:
+                    if line.strip():
+                        row = json.loads(line)
+                        return {"company": row.get("company") or "Figma",
+                                "role": row.get("title") or "Product Designer"}
+        except (OSError, json.JSONDecodeError):
+            pass
+        return {"company": "Figma", "role": "Product Designer"}
+
+    def letters_get() -> dict:
+        from .profile import lint_placeholders, load_letters
+
+        letters = load_letters(letters_path)
+        return {
+            "letters": letters,
+            "warnings": {str(i): w for i, l in enumerate(letters) if (w := lint_placeholders(l["body"]))},
+            "sample": _sample_job(),
+        }
+
+    def letters_save(body: dict) -> dict:
+        from .profile import lint_placeholders, save_letters
+
+        clean, errors = save_letters(letters_path, body)
+        if errors:
+            return {"ok": False, "errors": errors}
+        return {
+            "ok": True,
+            "letters": clean,
+            "warnings": {str(i): w for i, l in enumerate(clean) if (w := lint_placeholders(l["body"]))},
+        }
+
     ctx = {
         "render_report": render_report,
         "render_companies": build_companies_page,
@@ -395,6 +439,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "resume_extract": resume_extract,
         "ledger_get": ledger_get,
         "ledger_save": ledger_save,
+        "render_letters": build_letters_page,
+        "letters_get": letters_get,
+        "letters_save": letters_save,
     }
 
     httpd = serve(ctx, port=args.port)
