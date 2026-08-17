@@ -334,6 +334,14 @@ git add -A && git commit -m "what changed" && git push
 Her Mac pulls before every harvest, so changes land within the hour while the
 laptop is awake, otherwise on next wake.
 
+**Or she installs it herself:** when her copy is behind GitHub, an
+"Update available — install" button appears in the header of her jobs page and
+the Companies screen. One click pulls, restarts the app on the new version, and
+kicks off a fresh harvest. So "there's an update for you" over text is now a
+complete handoff — no terminal on her side. If her copy can't fast-forward
+(hand-edited files, diverged history) the button reports "tell William" instead
+of attempting anything clever.
+
 **Adding companies** — edit `config/companies.yaml`, commit, push. Her machine
 notices the file changed and re-verifies automatically.
 
