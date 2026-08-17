@@ -175,14 +175,18 @@ def cmd_serve(args: argparse.Namespace) -> int:
     store_path = ROOT / store_cfg.get("path", "data/jobs.jsonl")
 
     def render_report() -> str:
+        from .report import render_report_html
+
         rows = (
             [json.loads(l) for l in store_path.read_text(encoding="utf-8").splitlines() if l]
             if store_path.exists()
             else []
         )
-        out = ROOT / store_cfg.get("report_path", "data/jobs.html")
-        build_report(rows, out)
-        return out.read_text(encoding="utf-8")
+        # Refresh the Desktop file (token-free) as a side effect, then serve a
+        # variant carrying the write token so the update button can install.
+        # ctx["token"] is set by serve() before the first request is handled.
+        build_report(rows, ROOT / store_cfg.get("report_path", "data/jobs.html"))
+        return render_report_html(rows, server_token=ctx.get("token"))
 
     def verify(ats: str, token: str) -> tuple[bool, int, str]:
         """Check a board really exists, and report how many roles are *remote*.
@@ -236,6 +240,54 @@ def cmd_serve(args: argparse.Namespace) -> int:
             return [], []
         return [m.as_dict() for m in matches], tried
 
+    # A fetch on every status poll would hammer GitHub - every page load asks.
+    # Cache for a minute; an update busts the cache so the pill clears at once.
+    _status_cache: dict = {"at": 0.0, "data": None}
+
+    def repo_status() -> dict:
+        import time
+
+        from .update import check
+
+        now = time.monotonic()
+        if _status_cache["data"] is None or now - _status_cache["at"] > 60:
+            _status_cache["data"] = check(ROOT).as_dict()
+            _status_cache["at"] = now
+        return _status_cache["data"]
+
+    def do_update() -> dict:
+        import os
+        import subprocess
+        import threading
+
+        from .update import update
+
+        result = update(ROOT)
+        _status_cache["data"] = None
+        if not (result.get("ok") and result.get("changed")):
+            return result
+
+        def after_response() -> None:
+            # The process now running is the OLD code. Kick off a harvest on
+            # the new code (detached, so it survives our exit), then exit and
+            # let launchd's KeepAlive restart the server on the new version.
+            script = ROOT / "scripts" / "run_harvest.sh"
+            if os.name == "posix" and script.exists() and not os.environ.get("MEESTER_SKIP_HARVEST"):
+                try:
+                    subprocess.Popen(
+                        ["/bin/bash", str(script)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                except OSError:
+                    pass  # harvest is a bonus here; the hourly job covers it
+            threading.Timer(1.0, os._exit, args=(0,)).start()
+
+        result["restarting"] = True
+        result["_after_response"] = after_response
+        return result
+
     ctx = {
         "render_report": render_report,
         "render_companies": build_companies_page,
@@ -244,6 +296,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "token_path": ROOT / "data" / ".server_token",
         "verify": verify,
         "search": search,
+        "repo_status": repo_status,
+        "do_update": do_update,
     }
 
     httpd = serve(ctx, port=args.port)

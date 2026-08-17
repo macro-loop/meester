@@ -65,19 +65,31 @@ def _prepare(rows: list[dict]) -> list[dict]:
     return out
 
 
-def build_report(rows: list[dict], out_path: Path) -> Path:
+def render_report_html(rows: list[dict], server_token: str | None = None) -> str:
+    """The jobs page. Two variants of one template:
+
+    server_token=None  -> the offline Desktop file. No secret in it, ever - it
+                          lives in a folder Finder can reach and gets no writes.
+    server_token=str   -> the same page served from localhost, where the token
+                          lets the update button actually install.
+    """
     jobs = _prepare(rows)
     companies = sorted({j["c"] for j in jobs})
     generated = datetime.now().strftime("%A %d %B, %H:%M")
     fresh_24h = sum(1 for j in jobs if j["a"] is not None and j["a"] <= 1)
 
-    page = _TEMPLATE.format(
+    return _TEMPLATE.format(
         generated=html.escape(generated),
         total=len(jobs),
         fresh=fresh_24h,
         companies=len(companies),
         data=_safe_json(jobs),
+        server_token=json.dumps(server_token),
     )
+
+
+def build_report(rows: list[dict], out_path: Path) -> Path:
+    page = render_report_html(rows, server_token=None)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(page, encoding="utf-8")
     return out_path
@@ -147,6 +159,15 @@ __SHARED_CSS__
   .msg{margin-top:14px;padding:11px 14px;border-radius:6px;font-size:14px;display:none}
   .msg.ok{display:block;background:var(--accent-soft);border-left:2px solid var(--accent)}
   .msg.err{display:block;background:var(--bad-soft);border-left:2px solid var(--bad)}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin:26px 0 18px}
+  .topbar a.back{margin:0}
+  .upill{background:var(--accent);color:#fff;border:0;border-radius:6px;
+    padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;
+    font-family:inherit}
+  .upill:disabled{opacity:.6;cursor:default}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) .upill{color:#0A121A}
+  }
   .found{margin-top:14px;display:flex;flex-direction:column;gap:8px}
   .hit{display:flex;align-items:center;justify-content:space-between;gap:12px;
     padding:11px 14px;border:1px solid var(--accent);border-radius:6px;
@@ -171,7 +192,10 @@ __SHARED_CSS__
 </head>
 <body>
 <div class="wrap">
-  <a class="back" href="/jobs">&larr; Back to jobs</a>
+  <div class="topbar">
+    <a class="back" href="/jobs">&larr; Back to jobs</a>
+    <button class="upill" id="upill" hidden>Update available &mdash; install</button>
+  </div>
   <h1>Companies watched</h1>
   <p class="sub">Their careers pages are checked every hour. <span id="total"></span></p>
 
@@ -323,6 +347,31 @@ document.getElementById('add').addEventListener('submit', async ev => {
 });
 
 api('/api/companies').then(draw).catch(e => say(e.message, false));
+
+// Update pill - same behaviour as the jobs page.
+const upill = document.getElementById('upill');
+fetch('/api/status').then(r => r.json()).then(s => {
+  if (s && s.behind) upill.hidden = false;
+}).catch(() => {});
+upill.addEventListener('click', async () => {
+  upill.disabled = true;
+  upill.textContent = 'Installing…';
+  try {
+    const d = await api('/api/update', {});
+    if (!d.ok) { say(d.error || 'Update failed', false); upill.textContent = 'Update failed'; return; }
+    if (!d.changed) { upill.textContent = 'Already up to date'; return; }
+    upill.textContent = 'Restarting…';
+    say('Update installed — the app is restarting, this page reloads itself.', true);
+    const wait = setInterval(() => {
+      fetch('/api/ping').then(r => {
+        if (r.ok) { clearInterval(wait); location.reload(); }
+      }).catch(() => {});
+    }, 1500);
+  } catch (e) {
+    say(e.message, false);
+    upill.disabled = false;
+  }
+});
 </script>
 </body>
 </html>
@@ -391,6 +440,13 @@ _TEMPLATE = """<!doctype html>
     color:var(--fresh);border:1px solid var(--fresh);border-radius:3px;padding:1px 5px;
     white-space:nowrap}}
   .pay{{color:var(--soft)}}
+  .upill{{align-self:center;background:var(--accent);color:#fff;border:0;border-radius:6px;
+    padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;
+    font-family:inherit}}
+  .upill:disabled{{opacity:.6;cursor:default}}
+  @media (prefers-color-scheme:dark){{
+    :root:not([data-theme="light"]) .upill{{color:#0A121A}}
+  }}
   .manage{{margin-left:auto;align-self:center;color:var(--accent);text-decoration:none;
     font-size:14px;font-weight:600;border:1px solid var(--accent);border-radius:6px;
     padding:8px 14px;white-space:nowrap}}
@@ -410,6 +466,7 @@ _TEMPLATE = """<!doctype html>
       <div class="stat"><b>{fresh}</b><span>New today</span></div>
       <div class="stat"><b>{companies}</b><span>Companies</span></div>
       <a class="manage" id="manage" href="http://127.0.0.1:8765/companies" hidden>Add companies &rarr;</a>
+      <button class="upill" id="upill" hidden>Update available</button>
     </div>
   </header>
 
@@ -435,6 +492,9 @@ _TEMPLATE = """<!doctype html>
 
 <script>
 const JOBS = {data};
+// null in the offline Desktop file; the write token when served from localhost.
+// The Desktop file must never carry the token - it lives where Finder can reach.
+const SERVED_TOKEN = {server_token};
 const list = document.getElementById('list');
 const countEl = document.getElementById('count');
 const emptyEl = document.getElementById('empty');
@@ -496,6 +556,43 @@ render();
 // A dead link is worse than no link for someone who won't debug it.
 fetch('http://127.0.0.1:8765/api/ping', {{mode: 'cors'}})
   .then(r => r.ok && (document.getElementById('manage').hidden = false))
+  .catch(() => {{}});
+
+// Update pill. From the Desktop file it can only point at the app (no token
+// here by design); on the served page it actually installs.
+const upill = document.getElementById('upill');
+fetch('http://127.0.0.1:8765/api/status', {{mode: 'cors'}})
+  .then(r => r.json())
+  .then(s => {{
+    if (!s || !s.behind) return;
+    upill.hidden = false;
+    if (!SERVED_TOKEN) {{
+      upill.textContent = 'Update available \\u2192';
+      upill.addEventListener('click', () => location.href = 'http://127.0.0.1:8765/');
+      return;
+    }}
+    upill.textContent = 'Update available \\u2014 install';
+    upill.addEventListener('click', async () => {{
+      upill.disabled = true;
+      upill.textContent = 'Installing\\u2026';
+      try {{
+        const res = await fetch('/api/update',
+          {{method: 'POST', headers: {{'X-Meester-Token': SERVED_TOKEN}}}});
+        const d = await res.json();
+        if (!d.ok) {{ upill.textContent = d.error || 'Update failed'; return; }}
+        if (!d.changed) {{ upill.textContent = 'Already up to date'; return; }}
+        upill.textContent = 'Restarting\\u2026';
+        const wait = setInterval(() => {{
+          fetch('/api/ping').then(r => {{
+            if (r.ok) {{ clearInterval(wait); location.reload(); }}
+          }}).catch(() => {{}});
+        }}, 1500);
+      }} catch (e) {{
+        upill.textContent = 'Update failed \\u2014 tell William';
+        upill.disabled = false;
+      }}
+    }});
+  }})
   .catch(() => {{}});
 </script>
 </body>

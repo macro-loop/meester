@@ -111,6 +111,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
         elif route == "/api/ping":
             self._json(200, {"ok": True}, cors=True)
+        elif route == "/api/status":
+            # CORS-readable so the Desktop file:// report can show the update
+            # pill. Exposes only which public commit she is on and whether the
+            # repo is behind - nothing here is secret (the repo itself is
+            # public), and the route is read-only.
+            self._json(200, self.ctx["repo_status"](), cors=True)
         elif route == "/api/companies":
             self._json(200, self._snapshot())
         else:
@@ -122,11 +128,23 @@ class Handler(BaseHTTPRequestHandler):
             "/api/companies/add",
             "/api/companies/remove",
             "/api/companies/search",
+            "/api/update",
         ):
             self._json(404, {"error": "not found"})
             return
         if not self._authed():
             self._json(403, {"error": "bad or missing token"})
+            return
+
+        if route == "/api/update":
+            # Takes no input at all - the update command is a fixed argv - so
+            # this is handled before the body parse. do_update is responsible
+            # for scheduling the restart AFTER the response is written.
+            result = self.ctx["do_update"]()
+            self._json(200, result)
+            after = result.pop("_after_response", None)
+            if after:
+                after()
             return
 
         body = self._read_json()
