@@ -1,0 +1,90 @@
+# Copy this to preferences.yaml and fill it in. Roughly ten minutes.
+#
+#   cp profile/preferences.example.yaml profile/preferences.yaml
+#
+# These are the things a CV cannot tell the system. Everything downstream -
+# what gets shown, what gets ranked highly, what eventually gets applied to -
+# is only as good as these answers. Answer honestly rather than aspirationally:
+# an inflated salary floor produces an empty list, and a vague title list
+# produces noise.
+#
+# Anything left blank is treated as "no preference", which is a valid answer.
+
+# --- What she's looking for ---------------------------------------------------
+
+# Job titles she'd genuinely accept. Include the boring variants - boards use
+# wildly different names for the same job.
+titles:
+  - Product Designer
+  - Senior Product Designer
+  - UX Designer
+
+# Seniority band. One of: junior, mid, senior, staff, lead, manager, director
+seniority: senior
+
+# Fields or functions she is open to, in plain words.
+functions:
+  - design
+  - user research
+
+# --- Money --------------------------------------------------------------------
+
+# Lowest base salary she would seriously consider, in USD per year.
+# Postings below this are dropped. Postings that publish no salary are kept.
+salary_floor: 120000
+
+# --- Where ---------------------------------------------------------------------
+
+# Where she can legally work without the employer sponsoring a visa.
+work_authorization:
+  - US
+
+# Will she consider roles that require visa sponsorship?
+needs_sponsorship: false
+
+# Her timezone, and how far from it she'll work.
+timezone: America/New_York
+max_timezone_offset_hours: 6
+
+# --- Hard limits ---------------------------------------------------------------
+
+# Never show these, whatever the match. Companies, industries, or both.
+exclude_companies:
+  - Meta
+exclude_industries:
+  - gambling
+  - defense
+  - tobacco
+
+# Reject postings from staffing agencies and recruiters rather than employers.
+exclude_agencies: true
+
+# --- Priorities ----------------------------------------------------------------
+
+# Companies she'd genuinely be excited by. These are never auto-applied to -
+# they always come to her first, and get the warm-outreach treatment.
+dream_companies:
+  - Figma
+  - Linear
+
+# What she is deliberately moving away from. Free text, used by the scorer to
+# push these down rather than exclude them outright.
+moving_away_from: >
+  Large agencies, heavy client-services work, and roles that are mostly
+  producing visual assets rather than shaping the product.
+
+# What matters most, in order. The scorer weights against this.
+priorities:
+  - interesting product
+  - senior scope and autonomy
+  - compensation
+  - team quality
+
+# --- Practicalities -------------------------------------------------------------
+
+# How soon she could start.
+notice_period_weeks: 4
+
+# Roughly how many applications a week feels right. Quality beats volume - the
+# realistic useful range is 5 to 25.
+target_applications_per_week: 10

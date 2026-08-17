@@ -3,6 +3,14 @@
 data/
 logs/
 
+# HER PERSONAL DATA. THIS REPOSITORY IS PUBLIC.
+# A CV carries full name, address, phone, email and employment history.
+# Everything in profile/ is ignored except the two committed templates, and
+# scripts/githooks/pre-push refuses to push if anything else here gets tracked.
+profile/*
+!profile/README.md
+!profile/preferences.example.yaml
+
 # Local pause switch
 PAUSED
 

@@ -114,9 +114,21 @@ else
   log "harvest ok"
 fi
 
+# --- desktop shortcut ---------------------------------------------------------
+# Machines set up before the report existed would otherwise never get the alias,
+# because setup_mac.sh only runs by hand. Guarded by a marker so that deleting
+# the alias deliberately keeps it deleted rather than resurrecting it every hour.
+ALIAS_MARK="$VENV/.desktop_alias_done"
+if [[ ! -f "$ALIAS_MARK" ]] && [[ -d "$HOME/Desktop" ]] && [[ -f "$REPO/data/jobs.html" ]]; then
+  if ln -sfn "$REPO/data/jobs.html" "$HOME/Desktop/Remote jobs.html" 2>/dev/null; then
+    touch "$ALIAS_MARK"
+    log "added 'Remote jobs' shortcut to the Desktop"
+  fi
+fi
+
 if interactive; then
   printf '\nFull log: %s\n' "$LOG"
-  printf 'See the jobs: %s -m meester show --limit 40\n\n' "$PY"
+  printf 'Open the results: the "Remote jobs" file on the Desktop\n\n'
 fi
 
 # --- log rotation -------------------------------------------------------------

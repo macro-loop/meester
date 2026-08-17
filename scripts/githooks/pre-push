@@ -22,7 +22,24 @@ for f in scripts/*.sh scripts/githooks/*; do
   bash -n "$f" 2>/dev/null || fail "$f has a syntax error. This would strand her Mac with no way to self-update."
 done
 
-# --- 2. tests must pass -------------------------------------------------------
+# --- 2. no personal data may ever be pushed -----------------------------------
+# The repository is public. A CV carries full name, address, phone and
+# employment history, and a push is not undoable - even a reverted commit stays
+# in the history and in anyone's clone. .gitignore is the first line of defence;
+# this is the one that catches `git add -f` and a stray copy saved elsewhere.
+LEAKED="$(git ls-files \
+  | grep -Ev '^profile/(README\.md|preferences\.example\.yaml)$' \
+  | grep -Ei '^profile/|resume|cv[-_.]|curriculum.?vitae|\.docx?$|\.pdf$' || true)"
+
+if [[ -n "$LEAKED" ]]; then
+  printf '\n\033[31mpush blocked:\033[0m these look like personal files and this repo is PUBLIC:\n\n' >&2
+  printf '    %s\n' $LEAKED >&2
+  printf '\n  Remove them from git before pushing (the file stays on disk):\n' >&2
+  printf '      git rm --cached <file>\n\n' >&2
+  exit 1
+fi
+
+# --- 3. tests must pass -------------------------------------------------------
 PY=""
 for c in python python3; do
   command -v "$c" >/dev/null 2>&1 && { PY="$c"; break; }
