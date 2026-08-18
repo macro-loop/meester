@@ -460,6 +460,72 @@ def _sender_email(from_header: str) -> str:
     return m.group(0) if m else ""
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """One command that checks every precondition for matching and judging, so
+    nobody has to paste Python into a terminal to find out why the fit
+    percentages are missing."""
+    from .google_api import GoogleClient
+    from .llm import LLM, load_key
+    from .score.gates import has_usable_preferences, score_job
+
+    line = "=" * 44
+    print("Meester doctor")
+    print(line)
+    settings = _load("settings.yaml")
+    prefs, ledger = _profile_bits()
+
+    titles = prefs.get("titles") or []
+    print(f"titles set          : {len(titles)}  {titles[:5]}")
+    verified = bool(ledger and ledger.get("verified"))
+    print(f"CV ledger verified  : {verified}")
+
+    store = ROOT / "data" / "jobs.jsonl"
+    rows = ([json.loads(x) for x in store.read_text(encoding="utf-8").splitlines()
+             if x.strip()] if store.exists() else [])
+    survivors = ([r for r in rows if score_job(r, prefs, ledger)["match"]]
+                 if has_usable_preferences(prefs) else [])
+    print(f"jobs in store       : {len(rows)}")
+    print(f"For-you matches     : {len(survivors)}   (what the judge would score)")
+
+    key = load_key(ROOT / "profile")
+    detail = f"  (starts {key[:7]}, length {len(key)})" if key else ""
+    print(f"API key present     : {bool(key)}{detail}")
+    key_works = None
+    if key:
+        llm = LLM(ROOT / "profile", ROOT / "data",
+                  daily_cap=settings.get("llm", {}).get("daily_call_cap", 300))
+        try:
+            llm.call_json("Return a JSON object with a field ok set to true.",
+                          max_tokens=50)
+            key_works = True
+            print("API key works       : YES")
+        except Exception as exc:  # noqa: BLE001
+            key_works = False
+            print(f"API key works       : NO  ->  {type(exc).__name__}: {str(exc)[:220]}")
+
+    cache = ROOT / "data" / "judge_cache.jsonl"
+    cached = sum(1 for _ in cache.open(encoding="utf-8")) if cache.exists() else 0
+    print(f"judge cache entries : {cached}")
+    print(f"Google connected    : {GoogleClient(ROOT / 'profile').connected()}")
+    print(line)
+
+    if not titles:
+        print("NEXT: add job titles on the Profile screen.")
+    elif not survivors:
+        print("NEXT: no jobs match your titles yet - add companies that hire "
+              "these roles on the Companies screen, then run a harvest.")
+    elif not verified:
+        print("NEXT: open Your CV, fill it in and press Save (that marks it verified).")
+    elif not key:
+        print("NEXT: add an Anthropic API key on the Profile screen.")
+    elif key_works is False:
+        print("NEXT: the API key is present but was rejected - re-copy it from "
+              "console.anthropic.com and save it again on the Profile screen.")
+    else:
+        print("All set. Run:  bash scripts/run_harvest.sh   then reload the jobs page.")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     """Local-only web UI: watchlist, profile, updates - no terminal needed."""
     from .harvest.base import BoardClient
@@ -1017,6 +1083,7 @@ def main(argv: list[str] | None = None) -> int:
                       help="actually submit (default: dry run, no submit click)")
     p_ar.add_argument("--limit", type=int, default=None)
 
+    sub.add_parser("doctor", help="check why matching or judging is not working")
     sub.add_parser("google-auth", help="connect Gmail + Sheets (one-time)")
     sub.add_parser("inbox", help="classify JobSearch mail, draft replies")
     sub.add_parser("outreach", help="poll Clay results, queue outreach notes")
@@ -1035,6 +1102,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_serve(args)
     if args.cmd == "apply-run":
         return cmd_apply_run(args)
+    if args.cmd == "doctor":
+        return cmd_doctor(args)
     if args.cmd == "google-auth":
         return cmd_google_auth(args)
     if args.cmd == "inbox":
