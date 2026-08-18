@@ -1785,7 +1785,18 @@ render();
 // Only offer the Companies screen if the local helper is actually running.
 // A dead link is worse than no link for someone who won't debug it.
 fetch('http://127.0.0.1:8765/api/ping', {{mode: 'cors'}})
-  .then(r => r.ok && (document.getElementById('navlinks').hidden = false))
+  .then(r => {{
+    if (!r.ok) return;
+    document.getElementById('navlinks').hidden = false;
+    // This offline file is read-only by design (it must never carry the write
+    // token). When the app is up, say so - otherwise the star/queue buttons
+    // just look mysteriously missing.
+    if (!SERVED_TOKEN) {{
+      document.querySelector('header .sub').insertAdjacentHTML('beforeend',
+        ' \\u00b7 <a href="http://127.0.0.1:8765/">open the live app</a>'
+        + ' to star, hide or queue jobs');
+    }}
+  }})
   .catch(() => {{}});
 
 // Update pill. From the Desktop file it can only point at the app (no token
