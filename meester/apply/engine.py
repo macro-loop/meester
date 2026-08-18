@@ -94,6 +94,31 @@ class Engine:
 
     # --- the run ----------------------------------------------------------------
 
+    def _launch(self, pw):
+        """Launch chromium; if the binary is missing (fresh setup, or a pip
+        upgrade moved the pinned browser version), install it once and retry.
+        Returns None when a browser truly cannot be had this run."""
+        try:
+            return pw.chromium.launch(headless=True)
+        except Exception as exc:  # noqa: BLE001 - playwright's Error, plus IO
+            if "Executable doesn't exist" not in str(exc):
+                raise
+        import subprocess
+        import sys
+        print("apply engine: browser missing - downloading chromium (one-time)")
+        result = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            capture_output=True, text=True, timeout=900,
+        )
+        if result.returncode != 0:
+            print("apply engine: chromium install failed - "
+                  "approved items will retry next cycle")
+            return None
+        try:
+            return pw.chromium.launch(headless=True)
+        except Exception:  # noqa: BLE001
+            return None
+
     def run(self, dry_run: bool = True, limit: int | None = None) -> list[dict]:
         """Process approved application items. Returns per-item outcomes."""
         outcomes: list[dict] = []
@@ -108,7 +133,11 @@ class Engine:
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True)
+            browser = self._launch(pw)
+            if browser is None:
+                # Items stay `approved` - they run untouched next cycle once
+                # the browser exists. Never a traceback on an unattended Mac.
+                return [{"id": i["id"], "outcome": "browser-missing"} for i in items]
             for index, item in enumerate(items):
                 if self.paused_file.exists():
                     outcomes.append({"id": item["id"], "outcome": "paused"})

@@ -174,3 +174,59 @@ def test_needs_human_paths(tmp_path):
     q.transition("fp1", "needs_human", needs="captcha")
     q.transition("fp1", "submitted", note="applied by hand")  # she did it herself
     assert q.by_state("submitted")[0]["note"] == "applied by hand"
+
+
+def test_missing_browser_leaves_items_approved(tmp_path, monkeypatch):
+    """A missing chromium binary (fresh setup, or a pip upgrade that moved the
+    pinned browser) must never traceback or consume items: everything stays
+    `approved` and simply runs next cycle once the browser exists."""
+    from meester.apply.engine import Engine
+
+    q = Queue(tmp_path / "queue.json")
+    make_item(q)
+    q.transition("fp1", "approved")
+
+    engine = Engine(
+        queue=q, profile=dict(PROFILE), ledger={"verified": True},
+        resume_path=tmp_path / "resume.pdf", evidence_dir=tmp_path / "ev",
+        paused_file=tmp_path / "PAUSED",
+    )
+
+    class NoBrowser:
+        def launch(self, headless=True):
+            raise RuntimeError(
+                "BrowserType.launch: Executable doesn't exist at /nowhere")
+
+    class FakePW:
+        chromium = NoBrowser()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    import meester.apply.engine as eng_mod
+    import subprocess
+
+    installs = {"n": 0}
+
+    def fake_run(cmd, **kw):
+        installs["n"] += 1
+
+        class R:
+            returncode = 1
+            stdout = stderr = ""
+        return R()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        "playwright.sync_api.sync_playwright", lambda: FakePW(), raising=False)
+    # engine imports sync_playwright inside run(); patch the module it reads.
+    import playwright.sync_api as pw_api
+    monkeypatch.setattr(pw_api, "sync_playwright", lambda: FakePW())
+
+    outcomes = engine.run(dry_run=True)
+    assert outcomes == [{"id": "fp1", "outcome": "browser-missing"}]
+    assert installs["n"] == 1, "it must try the self-install exactly once"
+    assert q.by_state("approved")[0]["id"] == "fp1", "the item must survive untouched"

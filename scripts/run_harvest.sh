@@ -77,6 +77,20 @@ if [[ ! -f "$REQ_STAMP" ]] || [[ "$(cat "$REQ_STAMP")" != "$REQ_NOW" ]]; then
     || log "WARNING: dependency install failed"
 fi
 
+# Playwright pins its browser binary to the package version: a pip upgrade (or
+# a setup that predates the apply engine) leaves the package importable but the
+# browser missing, and every approved application then dies at launch. Stamped
+# by package version so this normally costs one python -c per hour, and the
+# ~150 MB download happens only when the version actually moved.
+PW_VER="$("$PY" -c 'import playwright; print(playwright.__version__)' 2>/dev/null || true)"
+PW_STAMP="$VENV/.playwright_browser"
+if [[ -n "$PW_VER" ]] && { [[ ! -f "$PW_STAMP" ]] || [[ "$(cat "$PW_STAMP")" != "$PW_VER" ]]; }; then
+  log "installing chromium for playwright $PW_VER (one-time download)"
+  "$PY" -m playwright install chromium >>"$LOG" 2>&1 \
+    && echo "$PW_VER" > "$PW_STAMP" \
+    || log "WARNING: chromium install failed - approved applications will wait for the next run"
+fi
+
 # --- UI service freshness -----------------------------------------------------
 # The app screens (Profile, CV, Letters, Companies) run as a separate
 # long-lived launchd service. A git pull changes the code on disk but does
