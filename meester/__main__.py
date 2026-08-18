@@ -468,6 +468,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     from .llm import LLM, load_key
     from .score.gates import has_usable_preferences, score_job
 
+    import re
+
     line = "=" * 44
     print("Meester doctor")
     print(line)
@@ -509,7 +511,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     cached = sum(1 for _ in cache.open(encoding="utf-8")) if cache.exists() else 0
     print(f"judge cache entries : {cached}")
     matched = judged_for_report(rows, prefs, ledger, cache)
-    print(f"verdicts matching now: {len(matched)}   (fit % you would see)")
+    print(f"verdicts matching now: {len(matched)}   (fit % in the cache)")
+    from .report import render_report_html
+    page = render_report_html(rows, prefs=prefs, ledger=ledger, judge=matched)
+    in_data = len(re.findall(r'\"fit\":\d+', page))
+    shows = "% fit</b>" in page
+    print(f"fit % in page data   : {in_data}")
+    print(f"fit % display code   : {'present' if shows else 'MISSING'}")
     if cached and not matched and survivors:
         fp = survivors[0].get("fingerprint", "")
         want = cache_key(fp, prefs, ledger)

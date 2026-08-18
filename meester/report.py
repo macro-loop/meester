@@ -1764,8 +1764,11 @@ function render() {{
     const isNew = j.a !== null && j.a <= 1;
     const bits = [j.l, j.d, j.s].filter(Boolean).map(esc);
     const star = j.dr ? '<span class="star" title="Dream company">\\u2605</span> ' : '';
-    const why = (j.r && j.r.length)
-      ? '<div class="why">' + j.r.map(esc).join(' \\u00b7 ') + '</div>' : '';
+    let whyBits = (j.r || []).map(esc);
+    if (j.fit != null) whyBits.unshift('<b>' + j.fit + '% fit</b>');
+    if (j.ev) whyBits.push(esc(j.ev));
+    const why = whyBits.length
+      ? '<div class="why">' + whyBits.join(' \\u00b7 ') + '</div>' : '';
     return '<li><div class="main">'
       + '<a href="' + esc(j.u) + '" target="_blank" rel="noopener">' + esc(j.t) + '</a>'
       + '<div class="meta">' + star + '<span class="co">' + esc(j.c) + '</span>'
