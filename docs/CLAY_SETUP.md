@@ -8,6 +8,29 @@ Google Sheet her Mac already has read access to.
 
 You build this once. After that it runs itself.
 
+## 0. Test the plumbing first (optional, 2 minutes)
+
+Before building the Clay table, confirm the payload shape and that a webhook
+receives it. In one terminal on the Mac:
+
+```bash
+python scripts/test_webhook.py serve
+```
+
+In another, fire the exact payload Meester sends:
+
+```bash
+python scripts/test_webhook.py send http://127.0.0.1:9999/
+```
+
+The receiver prints the JSON — `{fingerprint, company, role, job_url,
+requested_at}`. Once your Clay webhook URL exists (step 1), `send` it there too
+to confirm Clay ingests a row:
+
+```bash
+python scripts/test_webhook.py send "https://api.clay.com/…your-webhook…"
+```
+
 ## 1. A webhook-source table
 
 1. In your Clay workspace: **New table → Import → Webhook**.
