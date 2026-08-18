@@ -224,9 +224,12 @@ async def cmd_harvest(args: argparse.Namespace) -> int:
             except Exception as exc:  # noqa: BLE001
                 print(f"warning: auto-propose skipped ({type(exc).__name__}: {exc})")
 
+        from .llm import available as _key_present
+
         out = build_report(
             rows, ROOT / store_cfg.get("report_path", "data/jobs.html"),
             prefs=prefs, ledger=ledger, statuses=statuses, judge=judge,
+            has_key=_key_present(ROOT / "profile"),
         )
         print(f"report: {out}\n")
 
@@ -282,10 +285,13 @@ def cmd_report(args: argparse.Namespace) -> int:
     prefs, ledger = _profile_bits()
     from .score.judge import judged_for_report
 
+    from .llm import available as _key_present
+
     out = build_report(
         rows, ROOT / store_cfg.get("report_path", "data/jobs.html"),
         prefs=prefs, ledger=ledger, statuses=_statuses(),
         judge=judged_for_report(rows, prefs, ledger, ROOT / "data" / "judge_cache.jsonl"),
+        has_key=_key_present(ROOT / "profile"),
     )
     print(f"report: {len(rows)} roles -> {out}")
     return 0
@@ -480,11 +486,15 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
         judge = judged_for_report(rows, prefs, ledger,
                                   ROOT / "data" / "judge_cache.jsonl")
+        from .llm import available as _key_present
+
+        has_key = _key_present(ROOT / "profile")
         build_report(rows, ROOT / store_cfg.get("report_path", "data/jobs.html"),
-                     prefs=prefs, ledger=ledger, statuses=statuses, judge=judge)
+                     prefs=prefs, ledger=ledger, statuses=statuses, judge=judge,
+                     has_key=has_key)
         return render_report_html(rows, server_token=ctx.get("token"),
                                   prefs=prefs, ledger=ledger, statuses=statuses,
-                                  judge=judge)
+                                  judge=judge, has_key=has_key)
 
     def verify(ats: str, token: str) -> tuple[bool, int, str]:
         """Check a board really exists, and report how many roles are *remote*.

@@ -102,6 +102,7 @@ def render_report_html(
     ledger: dict | None = None,
     statuses: dict[str, dict] | None = None,
     judge: dict[str, dict] | None = None,
+    has_key: bool = False,
 ) -> str:
     """The jobs page. Two variants of one template:
 
@@ -123,6 +124,21 @@ def render_report_html(
     foryou_stat = (
         f'<div class="stat"><b>{matches}</b><span>For you</span></div>' if matches else ""
     )
+
+    # The judge note tells the truth about WHY there are no fit percentages,
+    # instead of always blaming a missing key. Empty means "say nothing".
+    if judge:
+        judge_hint = ""  # fits exist; note stays hidden
+    elif not has_key:
+        judge_hint = ("AI judge is off — add an Anthropic key under Your "
+                      "profile for fit percentages and evidence.")
+    elif ledger is None or not ledger.get("verified"):
+        judge_hint = ("AI judge needs your CV — upload and save it under Your "
+                      "CV, then it runs on the next harvest.")
+    else:
+        judge_hint = ("AI judge is on — fit percentages appear after the next "
+                      "harvest (usually within the hour).")
+
     return _TEMPLATE.format(
         generated=html.escape(generated),
         total=len(jobs),
@@ -131,6 +147,7 @@ def render_report_html(
         foryou_stat=foryou_stat,
         data=_safe_json(jobs),
         server_token=json.dumps(server_token),
+        judge_hint=json.dumps(judge_hint),
     )
 
 
@@ -141,9 +158,11 @@ def build_report(
     ledger: dict | None = None,
     statuses: dict[str, dict] | None = None,
     judge: dict[str, dict] | None = None,
+    has_key: bool = False,
 ) -> Path:
     page = render_report_html(
         rows, server_token=None, prefs=prefs, ledger=ledger, statuses=statuses,
+        has_key=has_key,
         judge=judge,
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1592,8 +1611,7 @@ _TEMPLATE = """<!doctype html>
   </div>
 
   <p class="count" id="count"></p>
-  <p class="count" id="judgenote" hidden>AI judge is off &mdash; add an Anthropic key
-    under Your profile to get fit percentages and evidence.</p>
+  <p class="count" id="judgenote" hidden></p>
   <ul id="list"></ul>
   <div class="empty" id="empty" hidden>Nothing matches that. Try a shorter word.</div>
 
@@ -1608,6 +1626,8 @@ const JOBS = {data};
 // null in the offline Desktop file; the write token when served from localhost.
 // The Desktop file must never carry the token - it lives where Finder can reach.
 const SERVED_TOKEN = {server_token};
+// The honest reason there are no fit percentages yet (empty = there are some).
+const JUDGE_HINT = {judge_hint};
 const list = document.getElementById('list');
 const countEl = document.getElementById('count');
 const emptyEl = document.getElementById('empty');
@@ -1735,7 +1755,9 @@ function render() {{
   countEl.textContent = rows.length + (rows.length === 1 ? ' role' : ' roles')
     + (filter === 'you' ? ' that fit your profile' : '');
   const judgeOff = filter === 'you' && rows.length > 0 && !rows.some(r => r.fit != null);
-  document.getElementById('judgenote').hidden = !judgeOff;
+  const note = document.getElementById('judgenote');
+  note.textContent = JUDGE_HINT;
+  note.hidden = !judgeOff || !JUDGE_HINT;
   emptyEl.hidden = rows.length > 0;
 
   list.innerHTML = rows.map(j => {{
