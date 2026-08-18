@@ -1674,7 +1674,14 @@ function actions(j) {{
   const btn = (set, glyph, label) =>
     '<button class="act' + (j.st === set ? ' on' : '') + '" data-fp="' + esc(j.id)
     + '" data-set="' + set + '" title="' + label + '">' + glyph + '</button>';
+  // Queue only where it makes sense: a For-you match she has not already
+  // applied to. The click handler POSTs /api/queue/propose.
+  const queue = (j.m && j.st !== 'applied')
+    ? '<button class="act" data-fp="' + esc(j.id)
+      + '" data-queue="1" title="Draft an application for approval">Queue</button>'
+    : '';
   return '<span class="acts">'
+    + queue
     + btn('starred', '\\u2605', 'Star it')
     + btn('applied', '\\u2713', 'Mark applied')
     + btn('hidden', '\\u2715', 'Hide it')
