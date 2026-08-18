@@ -322,6 +322,39 @@ blue button that appears when you push one.
 
 ---
 
+## What she can do once it's running
+
+Her jobs page links to five screens, all phone-friendly over Tailscale:
+
+- **Jobs** — the ranked list. Star / mark-applied / hide any row; **Queue** an
+  application straight from a match.
+- **Your profile** — preferences, the AI-judge key field, and the
+  **Application answers** section (name, contact, work authorization, the
+  voluntary EEO questions — each defaulting to "always ask me").
+- **Your CV / Letters** — as before.
+- **Queue** — the approve surface. Each application shows the *exact* answers
+  and letter that will be submitted; nothing goes out without her tap. Outreach
+  notes land here too.
+
+**The applying step runs in approve-everything mode.** Strong matches (once
+`apply.auto_propose_min_score` is set) are *proposed* into the queue; she
+approves; the engine submits on the next cycle from her own machine. It never
+solves a CAPTCHA, never guesses a legal question, screenshots every submission,
+and caps the daily count. Flipping `apply.auto_submit: true` (after ~30
+supervised submissions) lets high scorers auto-approve — dream companies always
+still wait for her. See `config/settings.yaml`.
+
+**AI judge, Gmail, and outreach are optional and off until connected:**
+
+- Add an Anthropic key under Your profile → fit percentages and evidence, plus
+  drafted cover-letter and outreach sentences (~$5–15/mo). Without it,
+  everything else works.
+- Connect Gmail (see `docs/GOOGLE_SETUP.md`) → the inbox loop classifies
+  JobSearch mail and drafts replies into her Gmail, and approved outreach sends
+  from her address.
+- Wire Clay (you, `docs/CLAY_SETUP.md`) → hiring-manager outreach after she
+  applies to a target company.
+
 ## Phone access with Tailscale
 
 Optional, ~15 minutes, and what makes the approve queue usable from anywhere.

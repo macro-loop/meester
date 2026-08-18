@@ -1,11 +1,37 @@
 # Meester
 
-A job-application autopilot. Full design lives in the approved plan; this README
-covers what exists today and how to run it.
+A job-application autopilot that runs on one person's Mac. Full design lives in
+the approved plan; `INSTALL.md` is the setup runbook. This README is the
+architecture map.
 
-**Built so far: Stage 2, Harvest.** It discovers remote roles straight from company
-ATS boards, classifies whether they are genuinely remote, dedupes across sources,
-and stores them idempotently. No applications are sent by any code in this repo.
+## The pipeline, end to end
+
+1. **Harvest** (`harvest/`) — hourly, pulls remote roles straight from company
+   Greenhouse / Lever / Ashby boards, classifies genuine remoteness, dedupes,
+   stores idempotently. Runs via launchd; self-updates from git.
+2. **Score** (`score/`) — deterministic gates rank every job against her
+   preferences and verified CV with plain-language reasons; an optional LLM
+   judge (`score/judge.py`, needs an Anthropic key) adds fit % and evidence.
+3. **Present** (`report.py`) — an offline HTML report (Desktop alias) plus a
+   localhost server (`server.py`, token-auth, Tailscale-reachable) with screens
+   for the ranked list, company watchlist, profile, CV/facts-ledger, cover
+   letters, and the approve queue.
+4. **Apply** (`apply/`) — approved queue items are submitted by Playwright
+   adapters from her own machine. The answers doctrine (`apply/answers.py`)
+   never guesses a legal question; CAPTCHAs and unknown forms route to her.
+   Approve-everything at launch; one config flip enables tiered auto-submit.
+5. **Follow up** (`outreach.py`, `inbox.py`, `google_api.py`) — warm outreach to
+   hiring managers via Clay, and an inbox loop that classifies replies and
+   drafts responses. Nothing sends without her approval.
+
+**Safety invariants, enforced in code, not remembered:** her data never leaves
+the Mac (`profile/` + `data/` gitignored, pre-push guard); Gmail reads are hard-
+scoped to the `JobSearch` label; legal/EEO answers come only from exact profile
+matches; `PAUSED` halts everything; the apply engine screenshots every
+submission and honours a daily cap.
+
+Earlier phase-by-phase notes follow; the harvest section documents the
+live-data bugs the classifier guards against.
 
 ## Setup
 
