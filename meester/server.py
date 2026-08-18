@@ -179,6 +179,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, self.ctx["repo_status"](), cors=True)
         elif route == "/api/companies":
             self._json(200, self._snapshot())
+        elif route == "/api/companies/directory":
+            self._json(200, self.ctx["directory_get"]())
         else:
             self._json(404, {"error": "not found"})
 
@@ -191,6 +193,8 @@ class Handler(BaseHTTPRequestHandler):
             "/api/companies/add",
             "/api/companies/remove",
             "/api/companies/search",
+            "/api/companies/bulk-add",
+            "/api/companies/add-tokens",
             "/api/update",
             "/api/profile/preferences",
             "/api/profile/resume",
@@ -281,6 +285,58 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/queue/run":
             self._json(200, self.ctx["queue_run"](body))
+            return
+
+        if route == "/api/companies/add-tokens":
+            # Directory picks arrive as {ats, token} pairs already known-good,
+            # so no lookup - just add (still de-duped against what's watched).
+            items = body.get("items")
+            if not isinstance(items, list) or not items:
+                self._json(400, {"error": "nothing selected"})
+                return
+            added = 0
+            with self.ctx["lock"]:
+                local = load_local(self.ctx["local_path"])
+                for it in items[:80]:
+                    ats = str((it or {}).get("ats", "")).strip().lower()
+                    token = str((it or {}).get("token", "")).strip().lower()
+                    if ats not in ATS_CHOICES or not token:
+                        continue
+                    if token not in (merge(self.ctx["load_base"](), local).get(ats) or []):
+                        add(local, ats, token)
+                        added += 1
+                save_local(self.ctx["local_path"], local)
+            # 'added_count', not 'added': _snapshot() already has an 'added' key
+            # (her local additions map) and **snapshot would shadow a plain count.
+            self._json(200, {"ok": True, "added_count": added, **self._snapshot()})
+            return
+
+        if route == "/api/companies/bulk-add":
+            raw = body.get("names")
+            names = [str(n).strip() for n in raw if str(n).strip()][:40] \
+                if isinstance(raw, list) else []
+            if not names:
+                self._json(400, {"error": "paste at least one company name"})
+                return
+            results = []
+            with self.ctx["lock"]:
+                local = load_local(self.ctx["local_path"])
+                base = self.ctx["load_base"]()
+                for name in names:
+                    matches, _ = self.ctx["search"](name)
+                    if not matches:
+                        results.append({"name": name, "status": "not_found"})
+                        continue
+                    m = matches[0]
+                    if m["token"] in (merge(base, local).get(m["ats"]) or []):
+                        results.append({"name": name, "status": "already",
+                                        "ats": m["ats"], "token": m["token"]})
+                        continue
+                    add(local, m["ats"], m["token"])
+                    results.append({"name": name, "status": "added",
+                                    "ats": m["ats"], "token": m["token"]})
+                save_local(self.ctx["local_path"], local)
+            self._json(200, {"ok": True, "results": results, **self._snapshot()})
             return
 
         if route.endswith("/search"):

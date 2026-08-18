@@ -1,0 +1,89 @@
+# Browse-by-industry directory for the Companies screen.
+#
+# A curated starting set so she can pick employers by field instead of having
+# to already know company names. Every token here has resolved to a live board;
+# adding one still re-checks it. Grow this freely - it is just a convenience
+# layer over the same watchlist. Each entry: {name, ats, token}.
+
+Health & Biotech:
+  - {name: Komodo Health,   ats: greenhouse, token: komodohealth}
+  - {name: Flatiron Health, ats: greenhouse, token: flatironhealth}
+  - {name: Oscar Health,    ats: greenhouse, token: oscar}
+  - {name: Maven Clinic,    ats: greenhouse, token: mavenclinic}
+  - {name: Omada Health,    ats: greenhouse, token: omadahealth}
+  - {name: Truveta,         ats: greenhouse, token: truveta}
+  - {name: ConcertAI,       ats: greenhouse, token: concertai}
+  - {name: Cohere Health,   ats: greenhouse, token: coherehealth}
+  - {name: Modern Health,   ats: greenhouse, token: modernhealth}
+  - {name: Included Health, ats: lever,      token: includedhealth}
+  - {name: Lyra Health,     ats: lever,      token: lyrahealth}
+  - {name: Clarify Health,  ats: lever,      token: clarifyhealth}
+  - {name: Ro,              ats: lever,      token: ro}
+  - {name: Cedar,           ats: ashby,      token: cedar}
+  - {name: Spring Health,   ats: ashby,      token: spring-health}
+  - {name: Headway,         ats: ashby,      token: headway}
+  - {name: Color Health,    ats: ashby,      token: color-health}
+
+Data, Analytics & AI:
+  - {name: Databricks,      ats: greenhouse, token: databricks}
+  - {name: Datadog,         ats: greenhouse, token: datadog}
+  - {name: Amplitude,       ats: greenhouse, token: amplitude}
+  - {name: Anthropic,       ats: greenhouse, token: anthropic}
+  - {name: Elastic,         ats: greenhouse, token: elastic}
+  - {name: MongoDB,         ats: greenhouse, token: mongodb}
+  - {name: New Relic,       ats: greenhouse, token: newrelic}
+  - {name: Scale AI,        ats: greenhouse, token: scaleai}
+  - {name: OpenAI,          ats: ashby,      token: openai}
+  - {name: Cohere,          ats: ashby,      token: cohere}
+  - {name: PostHog,         ats: ashby,      token: posthog}
+  - {name: Watershed,       ats: ashby,      token: watershed}
+
+Fintech & Payments:
+  - {name: Stripe,          ats: greenhouse, token: stripe}
+  - {name: Affirm,          ats: greenhouse, token: affirm}
+  - {name: Mercury,         ats: greenhouse, token: mercury}
+  - {name: Coinbase,        ats: greenhouse, token: coinbase}
+  - {name: Robinhood,       ats: greenhouse, token: robinhood}
+  - {name: Carta,           ats: greenhouse, token: carta}
+  - {name: Chime,           ats: greenhouse, token: chime}
+  - {name: Gusto,           ats: greenhouse, token: gusto}
+  - {name: Ramp,            ats: ashby,      token: ramp}
+  - {name: Tala,            ats: lever,      token: tala}
+
+Developer Tools & Infrastructure:
+  - {name: GitLab,          ats: greenhouse, token: gitlab}
+  - {name: Cloudflare,      ats: greenhouse, token: cloudflare}
+  - {name: Fastly,          ats: greenhouse, token: fastly}
+  - {name: Okta,            ats: greenhouse, token: okta}
+  - {name: PagerDuty,       ats: greenhouse, token: pagerduty}
+  - {name: Postman,         ats: greenhouse, token: postman}
+  - {name: Supabase,        ats: ashby,      token: supabase}
+  - {name: Render,          ats: ashby,      token: render}
+  - {name: Neon,            ats: ashby,      token: neon}
+  - {name: Replit,          ats: ashby,      token: replit}
+  - {name: Linear,          ats: ashby,      token: linear}
+
+Consumer & Marketplace:
+  - {name: Reddit,          ats: greenhouse, token: reddit}
+  - {name: Pinterest,       ats: greenhouse, token: pinterest}
+  - {name: Discord,         ats: greenhouse, token: discord}
+  - {name: Duolingo,        ats: greenhouse, token: duolingo}
+  - {name: Instacart,       ats: greenhouse, token: instacart}
+  - {name: Lyft,            ats: greenhouse, token: lyft}
+  - {name: Figma,           ats: greenhouse, token: figma}
+  - {name: Airtable,        ats: greenhouse, token: airtable}
+  - {name: Asana,           ats: greenhouse, token: asana}
+  - {name: Dropbox,         ats: greenhouse, token: dropbox}
+  - {name: Squarespace,     ats: greenhouse, token: squarespace}
+  - {name: Spotify,         ats: lever,      token: spotify}
+  - {name: Match Group,     ats: lever,      token: matchgroup}
+
+Operations, Security & Logistics:
+  - {name: Checkr,          ats: greenhouse, token: checkr}
+  - {name: Samsara,         ats: greenhouse, token: samsara}
+  - {name: Motive,          ats: greenhouse, token: motive}
+  - {name: Flexport,        ats: greenhouse, token: flexport}
+  - {name: Lattice,         ats: greenhouse, token: lattice}
+  - {name: Shield AI,       ats: lever,      token: shieldai}
+  - {name: Harvey,          ats: ashby,      token: harvey}
+  - {name: Sierra,          ats: ashby,      token: sierra}
