@@ -546,31 +546,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
         )
         return True, remote, ""
 
-    def directory_get() -> dict:
-        """The curated browse-by-industry list, each entry flagged if watched."""
-        from .watchlist import load_local, merge
-
-        path = CONFIG / "directory.yaml"
-        if not path.exists():
-            return {"categories": {}}
-        try:
-            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError:
-            return {"categories": {}}
-        watched = merge(_load_base_companies(None), load_local(LOCAL_COMPANIES))
-        out: dict[str, list] = {}
-        for category, entries in raw.items():
-            rows = []
-            for e in entries or []:
-                if not isinstance(e, dict) or not e.get("token"):
-                    continue
-                ats, token = e.get("ats", ""), str(e["token"]).lower()
-                rows.append({"name": e.get("name") or token, "ats": ats, "token": token,
-                             "watched": token in (watched.get(ats) or [])})
-            if rows:
-                out[category] = rows
-        return {"categories": out}
-
     def search(query: str) -> tuple[list[dict], list[str]]:
         """Resolve a company name or pasted careers link to live boards."""
         from .lookup import find_boards
@@ -972,7 +947,6 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "token_path": ROOT / "data" / ".server_token",
         "verify": verify,
         "search": search,
-        "directory_get": directory_get,
         "repo_status": repo_status,
         "do_update": do_update,
         "render_profile": build_profile_page,

@@ -219,25 +219,6 @@ __SHARED_CSS__
   form{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start}
   label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.12em;
     text-transform:uppercase;color:var(--muted);margin-bottom:5px}
-  textarea{width:100%;padding:10px 12px;font-size:15px;font-family:inherit;
-    color:var(--ink);background:var(--ground);border:1px solid var(--line);
-    border-radius:6px;line-height:1.5;resize:vertical;-webkit-appearance:none}
-  textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
-  .bulkrow{display:flex;gap:8px;align-items:baseline;font-size:14px;padding:3px 0}
-  .bulkrow .tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;
-    text-transform:uppercase;padding:1px 6px;border-radius:3px}
-  .bulkrow .added{background:var(--accent);color:#fff}
-  .bulkrow .already{background:var(--line-soft);color:var(--muted)}
-  .bulkrow .missing{background:var(--bad-soft);color:var(--bad)}
-  @media (prefers-color-scheme:dark){
-    :root:not([data-theme="light"]) .bulkrow .added{color:#0A121A}
-  }
-  #dir{display:flex;flex-direction:column;gap:2px;margin-top:12px}
-  .diritem{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:14.5px}
-  .diritem input{width:17px;height:17px;accent-color:var(--accent)}
-  .diritem.on{color:var(--muted)}
-  .diritem .have{font-family:var(--mono);font-size:10px;letter-spacing:.08em;
-    text-transform:uppercase;color:var(--muted);margin-left:auto}
   input[type=text],select{padding:10px 12px;font-size:16px;font-family:inherit;
     color:var(--ink);background:var(--ground);border:1px solid var(--line);
     border-radius:6px;-webkit-appearance:none}
@@ -310,28 +291,6 @@ __SHARED_CSS__
     </form>
     <div class="msg" id="msg"></div>
     <div id="results"></div>
-  </div>
-
-  <div class="panel">
-    <h2>Browse by industry</h2>
-    <p class="hint">Not sure who to add? Pick a field and check the ones you want.</p>
-    <select id="cat"><option value="">Choose an industry&hellip;</option></select>
-    <div id="dir"></div>
-    <div style="margin-top:12px" id="dirbar" hidden>
-      <button type="button" id="diradd">Add checked</button>
-      <button type="button" class="ghost" id="dirall">Check all</button>
-    </div>
-    <div class="msg" id="dirmsg"></div>
-  </div>
-
-  <div class="panel">
-    <h2>Add several at once</h2>
-    <p class="hint">Paste a list of company names &mdash; one per line, or separated by
-      commas. Each is looked up and the ones with a live careers page are added.</p>
-    <textarea id="bulk" rows="5" placeholder="Komodo Health&#10;Flatiron Health&#10;Oscar Health"></textarea>
-    <div style="margin-top:10px"><button type="button" id="bulkgo">Add all</button></div>
-    <div class="msg" id="bulkmsg"></div>
-    <div id="bulkresults"></div>
   </div>
 
   <div id="lists"></div>
@@ -460,91 +419,6 @@ document.getElementById('add').addEventListener('submit', async ev => {
     say(e.message, false);
   }
   go.disabled = false;
-});
-
-// Browse-by-industry directory.
-let DIR = {};
-const dirmsg = document.getElementById('dirmsg');
-function saydir(text, ok) { dirmsg.textContent = text; dirmsg.className = 'msg ' + (ok ? 'ok' : 'err'); }
-
-function drawCategory(cat) {
-  const items = DIR[cat] || [];
-  document.getElementById('dirbar').hidden = !items.length;
-  document.getElementById('dir').innerHTML = items.map((c, i) =>
-    '<label class="diritem' + (c.watched ? ' on' : '') + '">'
-    + '<input type="checkbox" data-i="' + i + '"' + (c.watched ? ' disabled' : '') + '>'
-    + esc(c.name)
-    + (c.watched ? '<span class="have">already watching</span>'
-                 : '<span class="have">' + esc(c.ats) + '</span>') + '</label>'
-  ).join('');
-}
-
-document.getElementById('cat').addEventListener('change', e => {
-  saydir('', true);
-  drawCategory(e.target.value);
-});
-document.getElementById('dirall').addEventListener('click', () => {
-  document.querySelectorAll('#dir input:not(:disabled)').forEach(b => b.checked = true);
-});
-document.getElementById('diradd').addEventListener('click', async () => {
-  const cat = document.getElementById('cat').value;
-  const items = Array.from(document.querySelectorAll('#dir input:checked'))
-    .map(b => DIR[cat][+b.dataset.i]).filter(Boolean)
-    .map(c => ({ats: c.ats, token: c.token}));
-  if (!items.length) { saydir('Check at least one company.', false); return; }
-  const btn = document.getElementById('diradd');
-  btn.disabled = true;
-  try {
-    const res = await api('/api/companies/add-tokens', {items});
-    saydir('Added ' + res.added_count + '. New roles appear within the hour.', true);
-    draw(res);
-    // reflect newly-watched state in the open category
-    DIR[cat].forEach(c => { if (items.find(i => i.token === c.token)) c.watched = true; });
-    drawCategory(cat);
-  } catch (e) { saydir(e.message, false); }
-  btn.disabled = false;
-});
-
-api('/api/companies/directory').then(d => {
-  DIR = d.categories || {};
-  const sel = document.getElementById('cat');
-  Object.keys(DIR).forEach(c => {
-    const o = document.createElement('option'); o.value = c; o.textContent = c;
-    sel.appendChild(o);
-  });
-}).catch(() => {});
-
-// Bulk add: paste a list, resolve and add each.
-const bulkmsg = document.getElementById('bulkmsg');
-function saybulk(text, ok) {
-  bulkmsg.textContent = text;
-  bulkmsg.className = 'msg ' + (ok ? 'ok' : 'err');
-}
-document.getElementById('bulkgo').addEventListener('click', async () => {
-  const raw = document.getElementById('bulk').value;
-  const names = raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-  if (!names.length) { saybulk('Paste some company names first.', false); return; }
-  const btn = document.getElementById('bulkgo');
-  btn.disabled = true;
-  saybulk('Looking up ' + names.length + ' companies\\u2026 this can take a moment.', true);
-  document.getElementById('bulkresults').innerHTML = '';
-  try {
-    const res = await api('/api/companies/bulk-add', {names});
-    const added = res.results.filter(r => r.status === 'added').length;
-    const already = res.results.filter(r => r.status === 'already').length;
-    const missing = res.results.filter(r => r.status === 'not_found').length;
-    saybulk('Added ' + added + ' \\u00b7 already had ' + already + ' \\u00b7 not found '
-            + missing + '. New roles appear in your list within the hour.', true);
-    const tag = {added: 'added', already: 'already', not_found: 'missing'};
-    const word = {added: 'added', already: 'already watching', not_found: 'no live board found'};
-    document.getElementById('bulkresults').innerHTML = res.results.map(r =>
-      '<div class="bulkrow"><span class="tag ' + tag[r.status] + '">' + word[r.status]
-      + '</span>' + esc(r.name) + (r.token ? ' <span style="color:var(--muted)">('
-      + esc(r.ats) + '/' + esc(r.token) + ')</span>' : '') + '</div>').join('');
-    document.getElementById('bulk').value = '';
-    draw(res);
-  } catch (e) { saybulk(e.message, false); }
-  btn.disabled = false;
 });
 
 api('/api/companies').then(draw).catch(e => say(e.message, false));
