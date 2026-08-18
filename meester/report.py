@@ -44,18 +44,24 @@ def _age_days(row: dict) -> float | None:
 
 
 def _prepare(
-    rows: list[dict], prefs: dict | None = None, ledger: dict | None = None
+    rows: list[dict],
+    prefs: dict | None = None,
+    ledger: dict | None = None,
+    statuses: dict[str, dict] | None = None,
 ) -> list[dict]:
     scoring = False
     if prefs:
         from .score.gates import has_usable_preferences, score_job
 
         scoring = has_usable_preferences(prefs)
+    statuses = statuses or {}
 
     out = []
     for r in rows:
         age = _age_days(r)
+        fp = r.get("fingerprint") or ""
         job = {
+            "id": fp,
             "t": r.get("title") or "",
             "c": r.get("company") or "",
             "l": r.get("location_raw") or ", ".join(r.get("locations") or []) or "Remote",
@@ -66,6 +72,8 @@ def _prepare(
             "a": round(age, 1) if age is not None else None,
             "f": r.get("first_seen") or "",
         }
+        if fp in statuses:
+            job["st"] = statuses[fp]["state"]
         if scoring:
             verdict = score_job(r, prefs, ledger)
             # Hard-excluded rows (her own never-show list) drop out entirely.
@@ -87,6 +95,7 @@ def render_report_html(
     server_token: str | None = None,
     prefs: dict | None = None,
     ledger: dict | None = None,
+    statuses: dict[str, dict] | None = None,
 ) -> str:
     """The jobs page. Two variants of one template:
 
@@ -99,7 +108,7 @@ def render_report_html(
     the For-you view. Scoring happens here, at render time, so a preference
     edit re-ranks on the next page load instead of the next harvest.
     """
-    jobs = _prepare(rows, prefs, ledger)
+    jobs = _prepare(rows, prefs, ledger, statuses)
     companies = sorted({j["c"] for j in jobs})
     generated = datetime.now().strftime("%A %d %B, %H:%M")
     fresh_24h = sum(1 for j in jobs if j["a"] is not None and j["a"] <= 1)
@@ -124,8 +133,11 @@ def build_report(
     out_path: Path,
     prefs: dict | None = None,
     ledger: dict | None = None,
+    statuses: dict[str, dict] | None = None,
 ) -> Path:
-    page = render_report_html(rows, server_token=None, prefs=prefs, ledger=ledger)
+    page = render_report_html(
+        rows, server_token=None, prefs=prefs, ledger=ledger, statuses=statuses
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(page, encoding="utf-8")
     return out_path
@@ -1210,6 +1222,18 @@ _TEMPLATE = """<!doctype html>
   .pay{{color:var(--soft)}}
   .star{{color:var(--accent)}}
   .why{{font-size:12.5px;color:var(--accent);margin-top:4px}}
+  .acts{{display:flex;gap:4px;align-items:center}}
+  .act{{border:1px solid var(--line);background:var(--surface);color:var(--muted);
+    border-radius:6px;min-width:34px;min-height:30px;font-size:14px;cursor:pointer;
+    padding:2px 8px}}
+  .act.on{{background:var(--accent);border-color:var(--accent);color:#fff}}
+  @media (prefers-color-scheme:dark){{
+    :root:not([data-theme="light"]) .act.on{{color:#0A121A}}
+  }}
+  .act:disabled{{opacity:.5}}
+  .badge{{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--muted);border:1px solid var(--line);
+    border-radius:3px;padding:1px 5px;white-space:nowrap}}
   .upill{{align-self:center;background:var(--accent);color:#fff;border:0;border-radius:6px;
     padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;
     font-family:inherit}}
@@ -1255,6 +1279,8 @@ _TEMPLATE = """<!doctype html>
       <button class="chip" id="f-today" aria-pressed="false">New today</button>
       <button class="chip" id="f-week"  aria-pressed="false">This week</button>
       <button class="chip" id="f-pay"   aria-pressed="false">Salary shown</button>
+      <button class="chip" id="f-applied" aria-pressed="false" hidden>Applied</button>
+      <button class="chip" id="f-hidden"  aria-pressed="false" hidden>Hidden</button>
     </div>
   </div>
 
@@ -1279,7 +1305,8 @@ const emptyEl = document.getElementById('empty');
 const q = document.getElementById('q');
 let filter = 'all';
 
-const chips = {{ you:'f-you', all:'f-all', today:'f-today', week:'f-week', pay:'f-pay' }};
+const chips = {{ you:'f-you', all:'f-all', today:'f-today', week:'f-week', pay:'f-pay',
+                 applied:'f-applied', hidden:'f-hidden' }};
 Object.entries(chips).forEach(([key, id]) => {{
   document.getElementById(id).addEventListener('click', () => {{
     filter = key;
@@ -1300,6 +1327,54 @@ if (HAS_MATCHES) {{
   document.getElementById('f-all').setAttribute('aria-pressed', 'false');
 }}
 
+// Applied and Hidden chips appear only once she has used them.
+function refreshStatusChips() {{
+  document.getElementById('f-applied').hidden = !JOBS.some(j => j.st === 'applied');
+  document.getElementById('f-hidden').hidden = !JOBS.some(j => j.st === 'hidden');
+}}
+refreshStatusChips();
+
+// Her verdict buttons. Only the served page can write (it carries the token);
+// the offline Desktop file shows read-only badges instead.
+function actions(j) {{
+  if (!SERVED_TOKEN) {{
+    if (j.st === 'applied') return '<span class="badge">Applied</span>';
+    if (j.st === 'starred') return '<span class="badge">\\u2605</span>';
+    return '';
+  }}
+  const btn = (set, glyph, label) =>
+    '<button class="act' + (j.st === set ? ' on' : '') + '" data-fp="' + esc(j.id)
+    + '" data-set="' + set + '" title="' + label + '">' + glyph + '</button>';
+  return '<span class="acts">'
+    + btn('starred', '\\u2605', 'Star it')
+    + btn('applied', '\\u2713', 'Mark applied')
+    + btn('hidden', '\\u2715', 'Hide it')
+    + '</span>';
+}}
+
+document.getElementById('list').addEventListener('click', async ev => {{
+  const b = ev.target.closest('.act');
+  if (!b || !SERVED_TOKEN) return;
+  ev.preventDefault();
+  const j = JOBS.find(x => x.id === b.dataset.fp);
+  if (!j) return;
+  const next = j.st === b.dataset.set ? null : b.dataset.set;
+  b.disabled = true;
+  try {{
+    const res = await fetch('/api/jobs/status', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json', 'X-Meester-Token': SERVED_TOKEN}},
+      body: JSON.stringify({{fingerprint: j.id, state: next}})
+    }});
+    if (res.ok) {{
+      if (next) j.st = next; else delete j.st;
+      refreshStatusChips();
+      render();
+    }}
+  }} catch (e) {{}}
+  b.disabled = false;
+}});
+
 function esc(s) {{
   return String(s).replace(/[&<>"']/g, c =>
     ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}})[c]);
@@ -1315,7 +1390,13 @@ function age(a) {{
 function render() {{
   const term = q.value.trim().toLowerCase();
   let rows = JOBS.filter(j => {{
-    if (filter === 'you'   && !j.m) return false;
+    const st = j.st || '';
+    // Hidden means hidden everywhere except its own chip; a job she has
+    // already applied to has no business back in "For you".
+    if (filter === 'hidden') {{ if (st !== 'hidden') return false; }}
+    else if (st === 'hidden') return false;
+    if (filter === 'applied' && st !== 'applied') return false;
+    if (filter === 'you'   && (!j.m || st === 'applied')) return false;
     if (filter === 'today' && !(j.a !== null && j.a <= 1)) return false;
     if (filter === 'week'  && !(j.a !== null && j.a <= 7)) return false;
     if (filter === 'pay'   && !j.s) return false;
@@ -1345,6 +1426,7 @@ function render() {{
       + bits.map(b => '<span>' + b + '</span>').join('')
       + '</div>' + why + '</div>'
       + (isNew ? '<span class="new">New</span>' : '')
+      + actions(j)
       + '<span class="age">' + age(j.a) + '</span></li>';
   }}).join('');
 }}

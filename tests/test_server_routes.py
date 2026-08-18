@@ -50,6 +50,7 @@ def live(tmp_path):
         "do_update": do_update,
         "prefs_get": lambda: {"fields": [], "values": {"salary_floor": 1}},
         "prefs_save": prefs_save,
+        "job_status_set": lambda body: {"ok": True, "got": body.get("state")},
     }
     httpd = serve(ctx, port=0)
     port = httpd.server_address[1]
@@ -130,6 +131,35 @@ def test_preferences_read_open_write_gated(live):
         headers={"Content-Type": "application/json", "X-Meester-Token": token},
     )
     assert code == 200 and data["ok"]
+
+
+def test_job_status_write_is_gated(live):
+    base, token, _ = live
+    body = b'{"fingerprint": "abc", "state": "starred"}'
+    code, _ = _post(f"{base}/api/jobs/status", body=body,
+                    headers={"Content-Type": "application/json"})
+    assert code == 403
+    code, data = _post(f"{base}/api/jobs/status", body=body,
+                       headers={"Content-Type": "application/json",
+                                "X-Meester-Token": token})
+    assert code == 200 and data["ok"] and data["got"] == "starred"
+
+
+def test_tailscale_hosts_are_allowed_but_others_still_rejected(live):
+    """Mobile access rides `tailscale serve`, which proxies with Host set to
+    the Mac's MagicDNS name. That namespace is Tailscale-controlled, so
+    allowing it does not reopen the rebinding hole for anyone else."""
+    base, _, _ = live
+    req = urllib.request.Request(f"{base}/api/ping",
+                                 headers={"Host": "her-mac.tail1234.ts.net"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        assert r.status == 200
+    # A name merely CONTAINING ts.net must not pass.
+    for evil in ("ts.net.evil.example", "evilts.net", "notts.nett"):
+        req = urllib.request.Request(f"{base}/api/ping", headers={"Host": evil})
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req, timeout=10)
+        assert e.value.code == 403, evil
 
 
 def test_wrong_host_header_is_rejected_everywhere(live):

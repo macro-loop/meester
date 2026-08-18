@@ -322,6 +322,34 @@ blue button that appears when you push one.
 
 ---
 
+## Phone access with Tailscale
+
+Optional, ~15 minutes, and what makes the approve queue usable from anywhere.
+Nothing becomes public: Tailscale is a private WireGuard network between her
+own devices only.
+
+1. On her Mac: install Tailscale (App Store or `brew install --cask tailscale`),
+   sign in (an Apple/Google login works).
+2. On her phone: install the Tailscale app, sign in to the **same** account.
+3. On her Mac, in Terminal, once:
+
+```bash
+tailscale serve --bg http://127.0.0.1:8765
+```
+
+4. On the phone, open the address `tailscale serve` printed — it looks like
+   `https://her-mac.tailXXXX.ts.net`. Add it to the home screen.
+
+The server itself stays bound to 127.0.0.1; Tailscale proxies it inside the
+tailnet with proper HTTPS. The app accepts `.ts.net` hostnames by design (that
+namespace is Tailscale-controlled, so nobody else can point one at her machine);
+everything else still gets a 403. **Do not use `tailscale funnel`** — that
+variant makes the page public internet-facing, which this app's auth model is
+deliberately not built for.
+
+Phone pages work while the Mac is awake — same charger-and-lid advice as the
+harvest.
+
 ## Updating an install that already exists
 
 If her Mac was set up before some of this landed, one command on her Mac brings

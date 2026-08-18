@@ -82,7 +82,19 @@ class Handler(BaseHTTPRequestHandler):
         preferences (and soon the resume) flow through GET responses.
         """
         host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower()
-        return host in ("127.0.0.1", "localhost", "::1")
+        if host in ("127.0.0.1", "localhost", "::1"):
+            return True
+        # Tailscale: `tailscale serve` proxies this loopback server to her
+        # tailnet with Host set to the machine's MagicDNS name
+        # (<mac>.<tailnet>.ts.net). The .ts.net namespace is controlled by
+        # Tailscale, so an attacker cannot point a name inside it at this
+        # server - the rebinding guard stays intact for every other suffix.
+        if host.endswith(".ts.net"):
+            return True
+        import os
+
+        extra = os.environ.get("MEESTER_EXTRA_HOST", "").strip().lower()
+        return bool(extra) and host == extra
 
     def _origin_ok(self) -> bool:
         origin = self.headers.get("Origin")
@@ -180,6 +192,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/profile/resume/extract",
             "/api/profile/ledger",
             "/api/profile/letters",
+            "/api/jobs/status",
         ):
             self._json(404, {"error": "not found"})
             return
@@ -241,6 +254,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/profile/preferences":
             self._json(200, self.ctx["prefs_save"](body))
+            return
+
+        if route == "/api/jobs/status":
+            self._json(200, self.ctx["job_status_set"](body))
             return
 
         if route.endswith("/search"):

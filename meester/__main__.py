@@ -44,6 +44,49 @@ def _profile_bits() -> tuple[dict, dict | None]:
     )
 
 
+def _statuses() -> dict:
+    from .status import load_statuses
+
+    return load_statuses(ROOT / "data" / "status.json")
+
+
+def _notify_new_matches(prepared: list[dict]) -> None:
+    """One macOS banner when a harvest surfaces new For-you matches.
+
+    The seen-set is written on every platform and even when the banner is
+    skipped, so switching machines or un-pausing never floods her with a
+    backlog of "new" roles that are weeks old.
+    """
+    import platform
+    import subprocess
+
+    path = ROOT / "data" / "notified.json"
+    try:
+        seen = set(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError):
+        seen = set()
+
+    current = {j["id"] for j in prepared if j.get("m") and j.get("id")}
+    new = current - seen
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(sorted(current | seen)), encoding="utf-8")
+    tmp.replace(path)
+
+    if new and platform.system() == "Darwin":
+        n = len(new)
+        text = f"{n} new role{'s' if n > 1 else ''} fit your profile"
+        try:
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display notification "{text}" with title "Meester" '
+                 'subtitle "Open Remote jobs on your Desktop"'],
+                capture_output=True, timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass  # a missed banner is not worth failing a harvest over
+
+
 def _load_base_companies(explicit: str | None = None) -> dict:
     """Prefer the verified token list; fall back to the raw seed list.
 
@@ -175,7 +218,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     prefs, ledger = _profile_bits()
     out = build_report(
         rows, ROOT / store_cfg.get("report_path", "data/jobs.html"),
-        prefs=prefs, ledger=ledger,
+        prefs=prefs, ledger=ledger, statuses=_statuses(),
     )
     print(f"report: {len(rows)} roles -> {out}")
     return 0
@@ -211,10 +254,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
         # variant carrying the write token so the update button can install.
         # ctx["token"] is set by serve() before the first request is handled.
         prefs, ledger = _profile_bits()
+        statuses = _statuses()
         build_report(rows, ROOT / store_cfg.get("report_path", "data/jobs.html"),
-                     prefs=prefs, ledger=ledger)
+                     prefs=prefs, ledger=ledger, statuses=statuses)
         return render_report_html(rows, server_token=ctx.get("token"),
-                                  prefs=prefs, ledger=ledger)
+                                  prefs=prefs, ledger=ledger, statuses=statuses)
 
     def verify(ats: str, token: str) -> tuple[bool, int, str]:
         """Check a board really exists, and report how many roles are *remote*.
@@ -441,8 +485,23 @@ def cmd_serve(args: argparse.Namespace) -> int:
             "warnings": {str(i): w for i, l in enumerate(clean) if (w := lint_placeholders(l["body"]))},
         }
 
+    def job_status_set(body: dict) -> dict:
+        from .status import set_status
+
+        state = body.get("state")
+        try:
+            set_status(
+                ROOT / "data" / "status.json",
+                str(body.get("fingerprint", "")),
+                state if state else None,
+            )
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True}
+
     ctx = {
         "render_report": render_report,
+        "job_status_set": job_status_set,
         "render_companies": build_companies_page,
         "load_base": lambda: _load_base_companies(None),
         "local_path": LOCAL_COMPANIES,
