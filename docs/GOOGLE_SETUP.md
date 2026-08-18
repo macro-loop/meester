@@ -51,6 +51,14 @@ unverified — that's expected for a personal testing app; **Advanced →
 Go to Meester**). The tab says "connected", and a refreshable token is stored
 at `profile/google_token.json`.
 
+The scopes requested: Gmail read/label/draft, Gmail send (approved outreach
+only), and Sheets read/write (polling Clay's contact export, and mirroring
+applied jobs to the Applications tab of the tracking sheet).
+
+> **If she connected before the tracker existed** (the token was granted when
+> Sheets was read-only): sheet writes will fail with a "reconnect" hint in the
+> log. The fix is running the same command above once more and approving again.
+
 ## 6. The JobSearch label + filter
 
 So Meester only ever sees hiring mail, she makes one Gmail filter:

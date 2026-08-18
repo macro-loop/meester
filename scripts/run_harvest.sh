@@ -206,12 +206,13 @@ if [[ ! -f "$REPO/PAUSED" ]]; then
   fi
 fi
 
-# --- inbox + outreach ---------------------------------------------------------
-# Both no-op cleanly without Google connected or Clay configured, so they are
-# safe to call every cycle. Neither ever sends without her approval: inbox
-# drafts replies into her Gmail, outreach only queues notes.
+# --- inbox + outreach + sheet tracker ------------------------------------------
+# All no-op cleanly without Google connected or a sheet configured, so they are
+# safe to call every cycle. None ever sends without her approval: inbox drafts
+# replies into her Gmail, outreach only queues notes, sheet-sync only appends
+# rows for jobs already applied to.
 if [[ ! -f "$REPO/PAUSED" ]]; then
-  for step in inbox outreach; do
+  for step in inbox outreach sheet-sync; do
     STEP_OUT="$("$PY" -m meester "$step" 2>&1)"
     if [[ -n "$STEP_OUT" ]]; then
       printf '%s\n' "$STEP_OUT" | sed 's/^/    /' >> "$LOG"

@@ -38,6 +38,13 @@ apply:
   auto_propose_min_score: null
   daily_cap: 15
 
+tracking:
+  # Google Sheet that mirrors every applied job (one row each on an
+  # "Applications" tab: date, company, title, how, link). Append-only - her
+  # own notes on the sheet are never touched. null = reuse clay_sheet_id
+  # below; both null = no sheet tracking, everything else unaffected.
+  sheet_id: null
+
 outreach:
   # Warm outreach stays quality-only. Weekly cap on notes actually sent.
   weekly_cap: 5

@@ -430,6 +430,45 @@ def cmd_outreach(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sheet_sync(args: argparse.Namespace) -> int:
+    """Mirror every applied job to the shared Google Sheet's Applications tab.
+
+    Append-only and idempotent; her own notes on the sheet are never touched.
+    Quietly a no-op until Google is connected and a sheet id is configured."""
+    from .apply.queue import Queue
+    from .google_api import GoogleClient
+    from .sheet_track import sync
+
+    settings = _load("settings.yaml")
+    sheet_id = (settings.get("tracking", {}) or {}).get("sheet_id")         or (settings.get("outreach", {}) or {}).get("clay_sheet_id")
+    if not sheet_id:
+        return 0
+    client = GoogleClient(ROOT / "profile")
+    if not client.connected():
+        return 0
+
+    statuses = _statuses()
+    store_by_fp: dict[str, dict] = {}
+    store_path = ROOT / "data" / "jobs.jsonl"
+    if store_path.exists():
+        with store_path.open(encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip():
+                    row = json.loads(line)
+                    if row.get("fingerprint"):
+                        store_by_fp[row["fingerprint"]] = row
+    queue_items = Queue(ROOT / "data" / "queue.json").items
+
+    try:
+        written = sync(client, sheet_id, statuses, store_by_fp, queue_items)
+    except Exception as exc:  # noqa: BLE001
+        print(f"sheet-sync: skipped - {exc}")
+        return 0
+    if written:
+        print(f"sheet-sync: {written} application(s) added to the sheet")
+    return 0
+
+
 def _maybe_llm():
     from .llm import LLM, available
 
@@ -1105,6 +1144,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("google-auth", help="connect Gmail + Sheets (one-time)")
     sub.add_parser("inbox", help="classify JobSearch mail, draft replies")
     sub.add_parser("outreach", help="poll Clay results, queue outreach notes")
+    sub.add_parser("sheet-sync", help="mirror applied jobs to the Google Sheet tracker")
 
     p_s = sub.add_parser("show", help="print the local store")
     p_s.add_argument("--limit", type=int, default=25)
@@ -1126,6 +1166,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_google_auth(args)
     if args.cmd == "inbox":
         return cmd_inbox(args)
+    if args.cmd == "sheet-sync":
+        return cmd_sheet_sync(args)
     if args.cmd == "outreach":
         return cmd_outreach(args)
     return cmd_show(args)

@@ -31,7 +31,10 @@ import httpx
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.send",
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    # Full spreadsheets (not .readonly): the applications tracker writes rows.
+    # Widening the scope requires a one-time re-consent (`meester google-auth`);
+    # until then writes fail with the reconnect hint from _check.
+    "https://www.googleapis.com/auth/spreadsheets",
 ]
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -266,7 +269,7 @@ class GoogleClient:
         resp.raise_for_status()
         return resp.json()
 
-    # --- Sheets (the Clay export) -----------------------------------------------
+    # --- Sheets (the Clay export + the applications tracker) ----------------------
 
     def sheet_rows(self, spreadsheet_id: str, range_a1: str = "A:Z") -> list[list[str]]:
         resp = httpx.get(
@@ -275,6 +278,41 @@ class GoogleClient:
         )
         _check(resp, "reading the Clay contact sheet")
         return resp.json().get("values", [])
+
+    def sheet_tab_rows(self, spreadsheet_id: str, tab: str) -> list[list[str]] | None:
+        """Rows of one tab, or None when the tab does not exist yet (Sheets
+        answers 400 'Unable to parse range' for a missing tab - for a sync
+        that is 'nothing written so far', not an error)."""
+        resp = httpx.get(
+            f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}"
+            f"/values/{tab}!A:Z",
+            headers=self._headers(), timeout=30,
+        )
+        if resp.status_code == 400 and "parse range" in (resp.text or "").lower():
+            return None
+        _check(resp, f"reading the {tab} tab")
+        return resp.json().get("values", [])
+
+    def sheet_add_tab(self, spreadsheet_id: str, tab: str) -> None:
+        """Create a tab; a tab that already exists is success, not failure."""
+        resp = httpx.post(
+            f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}:batchUpdate",
+            headers=self._headers(),
+            json={"requests": [{"addSheet": {"properties": {"title": tab}}}]},
+            timeout=30,
+        )
+        if resp.status_code == 400 and "already exists" in (resp.text or "").lower():
+            return
+        _check(resp, f"creating the {tab} tab")
+
+    def sheet_append(self, spreadsheet_id: str, tab: str,
+                     rows: list[list[str]]) -> None:
+        resp = httpx.post(
+            f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}"
+            f"/values/{tab}!A:Z:append?valueInputOption=RAW",
+            headers=self._headers(), json={"values": rows}, timeout=30,
+        )
+        _check(resp, f"appending to the {tab} tab")
 
 
 def _extract_body(payload: dict) -> str:
