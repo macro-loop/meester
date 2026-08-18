@@ -22,3 +22,7 @@ store:
   seen_path: data/seen.json
   # The readable page. This is the only output anyone but a developer opens.
   report_path: data/jobs.html
+
+llm:
+  # Hard stop on API calls per day - a looping bug costs one day, not a month.
+  daily_call_cap: 300

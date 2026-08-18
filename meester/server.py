@@ -193,6 +193,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/profile/ledger",
             "/api/profile/letters",
             "/api/jobs/status",
+            "/api/profile/apikey",
         ):
             self._json(404, {"error": "not found"})
             return
@@ -258,6 +259,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/jobs/status":
             self._json(200, self.ctx["job_status_set"](body))
+            return
+
+        if route == "/api/profile/apikey":
+            self._json(200, self.ctx["apikey_save"](body))
             return
 
         if route.endswith("/search"):

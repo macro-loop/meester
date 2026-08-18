@@ -216,9 +216,12 @@ def cmd_report(args: argparse.Namespace) -> int:
         return 1
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
     prefs, ledger = _profile_bits()
+    from .score.judge import judged_for_report
+
     out = build_report(
         rows, ROOT / store_cfg.get("report_path", "data/jobs.html"),
         prefs=prefs, ledger=ledger, statuses=_statuses(),
+        judge=judged_for_report(rows, prefs, ledger, ROOT / "data" / "judge_cache.jsonl"),
     )
     print(f"report: {len(rows)} roles -> {out}")
     return 0
@@ -255,10 +258,15 @@ def cmd_serve(args: argparse.Namespace) -> int:
         # ctx["token"] is set by serve() before the first request is handled.
         prefs, ledger = _profile_bits()
         statuses = _statuses()
+        from .score.judge import judged_for_report
+
+        judge = judged_for_report(rows, prefs, ledger,
+                                  ROOT / "data" / "judge_cache.jsonl")
         build_report(rows, ROOT / store_cfg.get("report_path", "data/jobs.html"),
-                     prefs=prefs, ledger=ledger, statuses=statuses)
+                     prefs=prefs, ledger=ledger, statuses=statuses, judge=judge)
         return render_report_html(rows, server_token=ctx.get("token"),
-                                  prefs=prefs, ledger=ledger, statuses=statuses)
+                                  prefs=prefs, ledger=ledger, statuses=statuses,
+                                  judge=judge)
 
     def verify(ats: str, token: str) -> tuple[bool, int, str]:
         """Check a board really exists, and report how many roles are *remote*.
@@ -365,7 +373,29 @@ def cmd_serve(args: argparse.Namespace) -> int:
     ledger_path = profile_dir / "facts_ledger.json"
 
     def prefs_get() -> dict:
-        return {"fields": schema_for_client(), "values": load_preferences(prefs_path)}
+        from .llm import load_key
+
+        key = load_key(profile_dir)
+        return {
+            "fields": schema_for_client(),
+            "values": load_preferences(prefs_path),
+            "api_key": {"present": bool(key), "tail": key[-4:] if key else ""},
+        }
+
+    def apikey_save(body: dict) -> dict:
+        from .llm import looks_like_key, save_key
+
+        key = body.get("key")
+        if key is None or key == "":
+            save_key(profile_dir, None)
+            return {"ok": True, "present": False}
+        key = str(key).strip()
+        if not looks_like_key(key):
+            return {"ok": False,
+                    "error": "that doesn't look like an Anthropic key "
+                             "(they start with sk-ant-)"}
+        save_key(profile_dir, key)
+        return {"ok": True, "present": True, "tail": key[-4:]}
 
     def prefs_save(body: dict) -> dict:
         clean, errors = save_preferences(prefs_path, body)
@@ -513,6 +543,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "render_profile": build_profile_page,
         "prefs_get": prefs_get,
         "prefs_save": prefs_save,
+        "apikey_save": apikey_save,
         "render_resume": build_resume_page,
         "resume_file": resume_file,
         "resume_save": resume_save,

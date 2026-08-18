@@ -48,6 +48,7 @@ def _prepare(
     prefs: dict | None = None,
     ledger: dict | None = None,
     statuses: dict[str, dict] | None = None,
+    judge: dict[str, dict] | None = None,
 ) -> list[dict]:
     scoring = False
     if prefs:
@@ -74,6 +75,10 @@ def _prepare(
         }
         if fp in statuses:
             job["st"] = statuses[fp]["state"]
+        if judge and fp in judge:
+            job["fit"] = judge[fp]["fit"]
+            if judge[fp].get("evidence"):
+                job["ev"] = judge[fp]["evidence"][0]
         if scoring:
             verdict = score_job(r, prefs, ledger)
             # Hard-excluded rows (her own never-show list) drop out entirely.
@@ -96,6 +101,7 @@ def render_report_html(
     prefs: dict | None = None,
     ledger: dict | None = None,
     statuses: dict[str, dict] | None = None,
+    judge: dict[str, dict] | None = None,
 ) -> str:
     """The jobs page. Two variants of one template:
 
@@ -108,7 +114,7 @@ def render_report_html(
     the For-you view. Scoring happens here, at render time, so a preference
     edit re-ranks on the next page load instead of the next harvest.
     """
-    jobs = _prepare(rows, prefs, ledger, statuses)
+    jobs = _prepare(rows, prefs, ledger, statuses, judge)
     companies = sorted({j["c"] for j in jobs})
     generated = datetime.now().strftime("%A %d %B, %H:%M")
     fresh_24h = sum(1 for j in jobs if j["a"] is not None and j["a"] <= 1)
@@ -134,9 +140,11 @@ def build_report(
     prefs: dict | None = None,
     ledger: dict | None = None,
     statuses: dict[str, dict] | None = None,
+    judge: dict[str, dict] | None = None,
 ) -> Path:
     page = render_report_html(
-        rows, server_token=None, prefs=prefs, ledger=ledger, statuses=statuses
+        rows, server_token=None, prefs=prefs, ledger=ledger, statuses=statuses,
+        judge=judge,
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(page, encoding="utf-8")
@@ -1000,13 +1008,20 @@ __SHARED_CSS__
   .check label{margin:0;font-weight:550}
   .savebar{position:sticky;bottom:0;background:var(--ground);padding:14px 0 18px;
     border-top:1px solid var(--line);display:flex;gap:14px;align-items:center}
-  .savebar button{font-family:inherit;font-size:15px;font-weight:600;padding:11px 22px;
-    border-radius:6px;border:1px solid var(--accent);background:var(--accent);
-    color:#fff;cursor:pointer}
-  .savebar button:disabled{opacity:.55;cursor:default}
+  .savebar button,.panel button{font-family:inherit;font-size:15px;font-weight:600;
+    padding:11px 22px;border-radius:6px;border:1px solid var(--accent);
+    background:var(--accent);color:#fff;cursor:pointer}
+  .panel button.ghostbtn{background:none;color:var(--accent);padding:8px 16px}
+  .savebar button:disabled,.panel button:disabled{opacity:.55;cursor:default}
   @media (prefers-color-scheme:dark){
-    :root:not([data-theme="light"]) .savebar button{color:#0A121A}
+    :root:not([data-theme="light"]) .savebar button,
+    :root:not([data-theme="light"]) .panel button{color:#0A121A}
+    :root:not([data-theme="light"]) .panel button.ghostbtn{color:var(--accent)}
   }
+  input[type=password]{width:100%;padding:10px 12px;font-size:15px;font-family:var(--mono);
+    color:var(--ink);background:var(--ground);border:1px solid var(--line);
+    border-radius:6px;-webkit-appearance:none}
+  input[type=password]:focus{outline:2px solid var(--accent);outline-offset:1px}
   .msg{padding:10px 14px;border-radius:6px;font-size:14px;display:none;flex:1}
   .msg.ok{display:block;background:var(--accent-soft);border-left:2px solid var(--accent)}
   .msg.err{display:block;background:var(--bad-soft);border-left:2px solid var(--bad)}
@@ -1024,6 +1039,15 @@ __SHARED_CSS__
     salary floor produces an empty list.</p>
 
   <div id="form"><p class="sub" style="margin-top:24px">Loading&hellip;</p></div>
+
+  <div class="panel">
+    <h2>AI judge</h2>
+    <p class="help" style="margin:0 0 12px">With an Anthropic API key, each matching
+      job gets a fit percentage and evidence drawn from your CV &mdash; roughly
+      $5&ndash;15 a month. Without one, matching still works, just without the
+      percentages. The key is stored only on this Mac.</p>
+    <div id="aikey"></div>
+  </div>
 
   <div class="savebar" id="savebar" hidden>
     <button id="save">Save</button>
@@ -1128,8 +1152,38 @@ document.getElementById('save').addEventListener('click', async () => {
   btn.disabled = false;
 });
 
+// The AI key panel. The key is never echoed back - only presence + tail.
+function drawKey(k) {
+  const el = document.getElementById('aikey');
+  if (k && k.present) {
+    el.innerHTML = '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">'
+      + '<span>Key present &middot; ends <b>' + esc(k.tail) + '</b></span>'
+      + '<button class="ghostbtn" id="keyrm" type="button">Remove</button></div>';
+    document.getElementById('keyrm').addEventListener('click', async () => {
+      try {
+        const res = await api('/api/profile/apikey', {key: null});
+        if (res.ok) { drawKey({present: false}); say('Key removed.', true); }
+      } catch (e) { say(e.message, false); }
+    });
+  } else {
+    el.innerHTML = '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">'
+      + '<div style="flex:1;min-width:220px"><input type="password" id="keyin" '
+      + 'placeholder="sk-ant-..." autocomplete="off"><p class="ferr" id="keyerr"></p></div>'
+      + '<button id="keysave" type="button">Save key</button></div>';
+    document.getElementById('keysave').addEventListener('click', async () => {
+      document.getElementById('keyerr').textContent = '';
+      try {
+        const res = await api('/api/profile/apikey',
+                              {key: document.getElementById('keyin').value});
+        if (res.ok) { drawKey(res); say('Key saved. The judge runs on the next harvest.', true); }
+        else document.getElementById('keyerr').textContent = res.error || 'Save failed';
+      } catch (e) { say(e.message, false); }
+    });
+  }
+}
+
 api('/api/profile/preferences')
-  .then(d => render(d.fields, d.values))
+  .then(d => { render(d.fields, d.values); drawKey(d.api_key); })
   .catch(e => { document.getElementById('form').innerHTML = ''; say(e.message, false); });
 
 // Update pill - same behaviour as the other pages.
@@ -1285,6 +1339,8 @@ _TEMPLATE = """<!doctype html>
   </div>
 
   <p class="count" id="count"></p>
+  <p class="count" id="judgenote" hidden>AI judge is off &mdash; add an Anthropic key
+    under Your profile to get fit percentages and evidence.</p>
   <ul id="list"></ul>
   <div class="empty" id="empty" hidden>Nothing matches that. Try a shorter word.</div>
 
@@ -1407,11 +1463,13 @@ function render() {{
   // For-you ranks by fit (dream companies pinned); every other view is by age.
   if (filter === 'you')
     rows = rows.slice().sort((a, b) =>
-      (b.dr || 0) - (a.dr || 0) || (b.sc || 0) - (a.sc || 0)
-      || (a.a ?? 999) - (b.a ?? 999));
+      (b.dr || 0) - (a.dr || 0) || (b.fit ?? -1) - (a.fit ?? -1)
+      || (b.sc || 0) - (a.sc || 0) || (a.a ?? 999) - (b.a ?? 999));
 
   countEl.textContent = rows.length + (rows.length === 1 ? ' role' : ' roles')
     + (filter === 'you' ? ' that fit your profile' : '');
+  const judgeOff = filter === 'you' && rows.length > 0 && !rows.some(r => r.fit != null);
+  document.getElementById('judgenote').hidden = !judgeOff;
   emptyEl.hidden = rows.length > 0;
 
   list.innerHTML = rows.map(j => {{
