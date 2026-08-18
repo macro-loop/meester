@@ -38,9 +38,32 @@ def prefs_hash(prefs: dict) -> str:
     ).hexdigest()[:12]
 
 
+def ledger_hash(ledger: dict | None) -> str:
+    """Fingerprint the CV by CONTENT, not by save time.
+
+    Keying the verdict cache on the ledger's saved_at timestamp meant every CV
+    re-save orphaned every cached fit - the render looked under a new timestamp,
+    found nothing, and blanked the percentages until the next harvest. Hashing
+    the fit-relevant content instead keeps verdicts valid across saves that do
+    not actually change the history."""
+    if not ledger:
+        return "no-ledger"
+    basis = {
+        "summary": ledger.get("summary"),
+        "skills": ledger.get("skills"),
+        "employment": [
+            {"employer": e.get("employer"), "title": e.get("title"),
+             "bullets": e.get("bullets")}
+            for e in (ledger.get("employment") or [])
+        ],
+    }
+    return hashlib.sha1(
+        json.dumps(basis, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:12]
+
+
 def cache_key(fingerprint: str, prefs: dict, ledger: dict | None) -> str:
-    version = (ledger or {}).get("saved_at", "no-ledger")
-    return f"{fingerprint}|{prefs_hash(prefs)}|{version}"
+    return f"{fingerprint}|{prefs_hash(prefs)}|{ledger_hash(ledger)}"
 
 
 def load_cache(path: Path) -> dict[str, dict]:

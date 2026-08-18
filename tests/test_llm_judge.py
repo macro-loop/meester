@@ -114,9 +114,13 @@ def test_prefs_change_invalidates_but_cosmetic_change_does_not():
     base = prefs_hash(PREFS)
     assert prefs_hash({**PREFS, "titles": ["Architect"]}) != base
     assert prefs_hash({**PREFS, "notice_period_weeks": 12}) == base
+    # The cache key tracks CV *content*, not save time: re-saving without a
+    # real change keeps verdicts valid (this is the fix for blanked fit %),
+    # while changing the history re-judges.
     key1 = cache_key("fp", PREFS, LEDGER)
-    key2 = cache_key("fp", PREFS, {**LEDGER, "saved_at": "2026-09-01"})
-    assert key1 != key2, "a re-verified ledger must re-judge"
+    assert cache_key("fp", PREFS, {**LEDGER, "saved_at": "2026-09-01"}) == key1,         "a bare re-save must NOT orphan cached verdicts"
+    changed = {**LEDGER, "skills": LEDGER["skills"] + ["Rust"]}
+    assert cache_key("fp", PREFS, changed) != key1, "changed history must re-judge"
 
 
 def test_unverified_ledger_means_no_judging(tmp_path, llm):
