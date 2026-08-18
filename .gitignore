@@ -22,6 +22,7 @@ config/companies.verified.yaml
 # `git pull --ff-only` in run_harvest.sh would refuse, and auto-update would
 # silently stop on a machine nobody is watching.
 config/companies.local.yaml
+config/settings.local.yaml
 
 .venv/
 __pycache__/

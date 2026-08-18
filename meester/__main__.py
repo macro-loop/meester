@@ -28,7 +28,26 @@ def _load(name: str) -> dict:
     path = CONFIG / name
     if not path.exists():
         sys.exit(f"missing config file: {path}")
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    # Machine-local values (webhook URLs, sheet ids, the auto_submit flip)
+    # belong in settings.local.yaml, which is gitignored - editing the tracked
+    # settings.yaml on her Mac blocks every future `git pull` that touches it.
+    # Sections merge one level deep: a local `apply: {auto_submit: true}`
+    # overrides that key and keeps the rest of the apply section.
+    if name == "settings.yaml":
+        local_path = CONFIG / "settings.local.yaml"
+        if local_path.exists():
+            try:
+                local = yaml.safe_load(local_path.read_text(encoding="utf-8")) or {}
+            except yaml.YAMLError as exc:
+                print(f"warning: settings.local.yaml ignored ({exc})")
+                local = {}
+            for key, value in local.items():
+                if isinstance(value, dict) and isinstance(data.get(key), dict):
+                    data[key] = {**data[key], **value}
+                else:
+                    data[key] = value
+    return data
 
 
 LOCAL_COMPANIES = CONFIG / "companies.local.yaml"
