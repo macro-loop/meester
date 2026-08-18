@@ -268,6 +268,12 @@ with that label — that's a hard rule in the code, not a preference — and:
   mail on its own.
 - **Notices silence.** Applied three weeks ago and heard nothing? The job gets
   a quiet note so you know it's likely gone cold.
+- **Keeps a ledger in a Google Sheet.** Every job you apply to —
+  automatically, by hand from a queue card, or just ticked ✓ on the jobs
+  list — becomes one row on a shared spreadsheet: date, company, title,
+  how, and a link. It only ever *adds* rows, so the sheet is yours to live
+  in — add a notes column, color things, sort however you like; nothing
+  you write there is ever touched.
 
 ### Warm outreach
 
