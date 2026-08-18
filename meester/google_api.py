@@ -42,8 +42,38 @@ class GoogleAuthError(RuntimeError):
     pass
 
 
+class GoogleApiError(RuntimeError):
+    """A Google API returned an error. Carries Google's own reason so callers
+    can show something better than a bare HTTP 403."""
+
+
 class LabelScopeError(RuntimeError):
     """A Gmail read was attempted without the JobSearch label restriction."""
+
+
+def _check(resp, what: str):
+    """Raise GoogleApiError with Google's own message on any non-2xx.
+
+    A raw resp.raise_for_status() gives '403 Forbidden' and nothing useful;
+    the JSON body says whether it's a disabled API, a missing scope, or no
+    access to a resource - exactly what someone needs to fix it."""
+    if resp.status_code < 400:
+        return resp
+    detail = ""
+    try:
+        err = resp.json().get("error", {})
+        detail = err.get("message") or err.get("status") or ""
+    except Exception:  # noqa: BLE001
+        detail = (resp.text or "")[:200]
+    hint = ""
+    low = detail.lower()
+    if "has not been used" in low or "disabled" in low:
+        hint = " — enable that API in your Google Cloud project (see docs/GOOGLE_SETUP.md)."
+    elif "scope" in low:
+        hint = " — reconnect with `python -m meester google-auth` to grant all permissions."
+    elif resp.status_code == 403:
+        hint = " — the connected account may not have access to it."
+    raise GoogleApiError(f"{what}: {resp.status_code} {detail}{hint}")
 
 
 class GoogleClient:
@@ -182,7 +212,7 @@ class GoogleClient:
             params={"q": scoped, "maxResults": max_results},
             timeout=30,
         )
-        resp.raise_for_status()
+        _check(resp, "reading your JobSearch mail")
         return resp.json().get("messages", [])
 
     def gmail_message(self, message_id: str) -> dict:
@@ -190,7 +220,7 @@ class GoogleClient:
             f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}",
             headers=self._headers(), params={"format": "full"}, timeout=30,
         )
-        resp.raise_for_status()
+        _check(resp, "reading a message")
         data = resp.json()
         headers = {h["name"].lower(): h["value"]
                    for h in data.get("payload", {}).get("headers", [])}
@@ -243,7 +273,7 @@ class GoogleClient:
             f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{range_a1}",
             headers=self._headers(), timeout=30,
         )
-        resp.raise_for_status()
+        _check(resp, "reading the Clay contact sheet")
         return resp.json().get("values", [])
 
 

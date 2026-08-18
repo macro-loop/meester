@@ -356,7 +356,13 @@ def cmd_inbox(args: argparse.Namespace) -> int:
     prefs, _ = _profile_bits()
     her_name = (prefs.get("app_first_name") or "").strip()
 
-    actions = process(client, llm, ROOT / "data" / "inbox_seen.json")
+    # A Google hiccup (disabled API, expired grant, a bad day) must not crash
+    # the harvest cycle - the useful work already ran. Report it, move on.
+    try:
+        actions = process(client, llm, ROOT / "data" / "inbox_seen.json")
+    except Exception as exc:  # noqa: BLE001
+        print(f"inbox: skipped - {exc}")
+        return 0
     moved = drafted = 0
     for act in actions:
         # We cannot map a message to a specific application without a stronger
@@ -393,7 +399,11 @@ def cmd_outreach(args: argparse.Namespace) -> int:
     if not client.connected():
         return 0
 
-    contacts = poll_contacts(client, sheet_id)
+    try:
+        contacts = poll_contacts(client, sheet_id)
+    except Exception as exc:  # noqa: BLE001
+        print(f"outreach: skipped - {exc}")
+        return 0
     if not contacts:
         return 0
     queue = Queue(ROOT / "data" / "queue.json")
