@@ -674,7 +674,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
         return {"ok": True, "kind": kind, "bytes": len(data)}
 
     def resume_extract() -> dict:
-        from .extract import draft_ledger, to_text
+        from .extract import draft_ledger, llm_structure, to_text
+        from .profile import validate_ledger
 
         path = _stored_resume()
         if path is None:
@@ -689,7 +690,12 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 "error": "no text found - this looks like a scanned image rather "
                 "than a text PDF. Fill the sections in by hand instead.",
             }
-        return {"ok": True, "draft": draft_ledger(text)}
+        # With a key, let the model structure the clean text - much better at
+        # employer/title placement than regex. It only organises what is there;
+        # she still reviews. Without a key, the heuristic draft.
+        llm = _maybe_llm()
+        draft = llm_structure(text, llm) or draft_ledger(text)
+        return {"ok": True, "draft": validate_ledger(draft), "by": "ai" if llm else "basic"}
 
     def ledger_get() -> dict:
         from .profile import load_ledger

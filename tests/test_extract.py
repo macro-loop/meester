@@ -147,6 +147,43 @@ def test_save_stamps_verified_and_round_trips(tmp_path):
     assert back["employment"][0]["employer"] == saved["employment"][0]["employer"]
 
 
+VERTICAL_CV = """WORK EXPERIENCE
+Compliance Specialist
+Sep2024-April 2025
+RELI Group
+•
+Monitor providers in the MCP model
+• Provide CMS updates on the model
+Data Analyst
+June 2023-Sep2024
+RELI Group
+• Extract and analyze CMS claims data
+• Build Python models for trend analysis
+"""
+
+
+def test_vertical_layout_with_no_space_dates():
+    """The real-resume shape that broke the parser: title / date / employer on
+    separate lines, dates written 'Sep2024' with no space, bullets where the
+    glyph sits on its own line."""
+    entries = draft_ledger(VERTICAL_CV)["employment"]
+    assert len(entries) == 2, [e["title"] for e in entries]
+    first, second = entries
+    assert first["title"] == "Compliance Specialist"
+    assert first["employer"] == "RELI Group"
+    assert first["start"] == "Sep2024" and "April 2025" in first["end"]
+    assert any("Monitor providers" in b for b in first["bullets"])
+    assert second["title"] == "Data Analyst"
+    assert any("Python models" in b for b in second["bullets"])
+
+
+def test_ligatures_are_folded_not_accents():
+    from meester.extract import _normalize
+
+    assert _normalize("Snowﬂake ﬁndings") == "Snowflake findings"
+    assert _normalize("café résumé") == "café résumé"
+
+
 def test_corrupt_ledger_reads_as_absent(tmp_path):
     path = tmp_path / "facts_ledger.json"
     path.write_text("{broken", encoding="utf-8")
