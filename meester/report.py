@@ -1080,7 +1080,40 @@ function hasBlanks(item) {
   return /\\{[a-zA-Z_]+\\}/.test(finalLetter(item));
 }
 
+function outreachBody(item) {
+  if (item.note_body != null) return item.note_body;
+  try { return (JSON.parse(item.note || '{}').body) || ''; } catch (e) { return ''; }
+}
+
+function outreachCard(item) {
+  const job = item.job || {};
+  const contact = item.contact || {};
+  const editable = ['proposed', 'needs_human'].includes(item.state);
+  const body = outreachBody(item);
+  const hasBlank = /\\[[^\\]]+\\]/.test(body);
+  let buttons = '';
+  if (item.state === 'proposed')
+    buttons = '<button data-act="approve"' + (hasBlank ? ' disabled' : '')
+      + '>Send this note</button>'
+      + '<button class="ghost" data-act="skip">Skip</button>'
+      + (hasBlank ? '<span class="blank-warn">Fill the [bracketed] part first</span>' : '');
+  return '<div class="card" data-id="' + esc(item.id) + '" data-kind="outreach">'
+    + '<h3>' + esc(contact.name || 'Hiring contact') + '</h3>'
+    + '<p class="co">' + esc(contact.title || '') + (contact.title ? ' at ' : '')
+    + esc(job.company || '') + ' &middot; ' + esc(contact.email || '') + '</p>'
+    + '<div class="chipline"><span class="state ' + esc(item.state) + '">'
+    + esc(item.state.replace('_', ' ')) + '</span>'
+    + '<span class="why">outreach after applying to ' + esc(job.title || '') + '</span></div>'
+    + '<label>The note that will be sent from your email</label>'
+    + '<textarea data-f="note_body" rows="8" ' + (editable ? '' : 'readonly') + '>'
+    + esc(body) + '</textarea>'
+    + (editable ? '<div class="buttons"><button class="ghost" data-act="update">Save note</button></div>' : '')
+    + (buttons ? '<div class="buttons">' + buttons + '</div>' : '')
+    + '</div>';
+}
+
 function card(item) {
+  if (item.kind === 'outreach') return outreachCard(item);
   const job = item.job || {};
   const editable = ['proposed', 'approved', 'needs_human'].includes(item.state);
   const blanks = item.letter_body && hasBlanks(item);
@@ -1149,8 +1182,10 @@ async function act(button) {
   if (action === 'update') {
     const letterEl = cardEl.querySelector('[data-f="letter"]');
     const whyEl = cardEl.querySelector('[data-f="why_them"]');
+    const noteEl = cardEl.querySelector('[data-f="note_body"]');
     if (letterEl) body.letter_body = letterEl.value;
     if (whyEl) body.why_them = whyEl.value;
+    if (noteEl) body.note_body = noteEl.value;
   }
   button.disabled = true;
   try {

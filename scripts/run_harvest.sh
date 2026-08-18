@@ -192,6 +192,20 @@ if [[ ! -f "$REPO/PAUSED" ]]; then
   fi
 fi
 
+# --- inbox + outreach ---------------------------------------------------------
+# Both no-op cleanly without Google connected or Clay configured, so they are
+# safe to call every cycle. Neither ever sends without her approval: inbox
+# drafts replies into her Gmail, outreach only queues notes.
+if [[ ! -f "$REPO/PAUSED" ]]; then
+  for step in inbox outreach; do
+    STEP_OUT="$("$PY" -m meester "$step" 2>&1)"
+    if [[ -n "$STEP_OUT" ]]; then
+      printf '%s\n' "$STEP_OUT" | sed 's/^/    /' >> "$LOG"
+      if interactive; then printf '%s\n' "$STEP_OUT" | sed 's/^/    /'; fi
+    fi
+  done
+fi
+
 # --- log rotation -------------------------------------------------------------
 # Unattended jobs that log forever eventually fill a 256GB laptop.
 if [[ -f "$LOG" ]] && [[ "$(wc -l < "$LOG")" -gt 5000 ]]; then

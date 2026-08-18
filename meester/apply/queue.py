@@ -106,7 +106,7 @@ class Queue:
         if item.get("state") not in ("proposed", "approved", "needs_human"):
             raise ValueError("this item is past editing")
         for key, value in fields.items():
-            if key in ("letter_body", "note", "why_them") and value is not None:
+            if key in ("letter_body", "note", "why_them", "note_body") and value is not None:
                 item[key] = str(value)[:4000]
         item["updated"] = _now()
         self._save()

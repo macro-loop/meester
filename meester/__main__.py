@@ -323,6 +323,127 @@ def cmd_apply_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_google_auth(args: argparse.Namespace) -> int:
+    """Run the one-time Google consent flow on her Mac."""
+    from .google_api import GoogleClient
+
+    client = GoogleClient(ROOT / "profile")
+    if not client.configured():
+        print("Missing profile/google_credentials.json.")
+        print("Follow docs/GOOGLE_SETUP.md to download it, then re-run this.")
+        return 1
+    client.authorize()
+    return 0
+
+
+def cmd_inbox(args: argparse.Namespace) -> int:
+    """Read JobSearch mail, move the tracker, draft (never send) replies."""
+    from .google_api import GoogleClient
+    from .inbox import draft_reply_text, process
+    from .status import set_status
+
+    client = GoogleClient(ROOT / "profile")
+    if not client.connected():
+        print("Google not connected - run: python -m meester google-auth")
+        return 0
+    llm = _maybe_llm()
+    prefs, _ = _profile_bits()
+    her_name = (prefs.get("app_first_name") or "").strip()
+
+    actions = process(client, llm, ROOT / "data" / "inbox_seen.json")
+    moved = drafted = 0
+    for act in actions:
+        # We cannot map a message to a specific application without a stronger
+        # key than the sender, so status moves are reported, and the reply
+        # drafting - the labour-saving part - always runs.
+        if act["needs_reply"]:
+            draft = draft_reply_text(llm, act["category"], act["subject"], "", her_name)
+            if draft:
+                try:
+                    client.gmail_create_draft(_sender_email(act["from"]), draft[0],
+                                              draft[1], thread_id=act.get("thread_id"))
+                    drafted += 1
+                except Exception as exc:  # noqa: BLE001
+                    print(f"  draft failed: {exc}")
+        if act["status"]:
+            moved += 1
+    print(f"inbox: {len(actions)} new, {drafted} reply draft(s) in your Gmail, "
+          f"{moved} status signal(s)")
+    return 0
+
+
+def cmd_outreach(args: argparse.Namespace) -> int:
+    """Poll Clay results, draft notes, queue them for her approval."""
+    from .apply.queue import Queue
+    from .google_api import GoogleClient
+    from .outreach import draft_note, poll_contacts, skeleton_note
+
+    settings = _load("settings.yaml")
+    ocfg = settings.get("outreach", {})
+    sheet_id = ocfg.get("clay_sheet_id")
+    if not sheet_id:
+        return 0
+    client = GoogleClient(ROOT / "profile")
+    if not client.connected():
+        return 0
+
+    contacts = poll_contacts(client, sheet_id)
+    if not contacts:
+        return 0
+    queue = Queue(ROOT / "data" / "queue.json")
+    llm = _maybe_llm()
+    _prefs, ledger = _profile_bits()
+    added = 0
+    for fp, contact in contacts.items():
+        outreach_id = f"outreach:{fp}"
+        if queue.has(outreach_id):
+            continue
+        row = _lookup_store_row(fp)
+        company = (row or {}).get("company", "the company")
+        role = (row or {}).get("title", "the role")
+        note = draft_note(llm, contact, company, role,
+                          (row or {}).get("description", ""), ledger)             or skeleton_note(company, role)
+        queue.propose(outreach_id, "outreach", {
+            "job": {"company": company, "title": role,
+                    "url": (row or {}).get("url", "")},
+            "contact": contact, "note": note, "reasons": ["hiring-manager outreach"],
+        })
+        added += 1
+    if added:
+        print(f"outreach: {added} note(s) queued for approval")
+    return 0
+
+
+def _maybe_llm():
+    from .llm import LLM, available
+
+    if not available(ROOT / "profile"):
+        return None
+    settings = _load("settings.yaml")
+    return LLM(ROOT / "profile", ROOT / "data",
+               daily_cap=settings.get("llm", {}).get("daily_call_cap", 300))
+
+
+def _lookup_store_row(fingerprint: str) -> dict | None:
+    path = ROOT / "data" / "jobs.jsonl"
+    if not path.exists():
+        return None
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip():
+                row = json.loads(line)
+                if row.get("fingerprint") == fingerprint:
+                    return row
+    return None
+
+
+def _sender_email(from_header: str) -> str:
+    import re as _re
+
+    m = _re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", from_header or "")
+    return m.group(0) if m else ""
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     """Local-only web UI: watchlist, profile, updates - no terminal needed."""
     from .harvest.base import BoardClient
@@ -617,6 +738,47 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
         return Queue(ROOT / "data" / "queue.json")
 
+    def self_kind(q, item_id: str) -> str:
+        return (q.items.get(item_id) or {}).get("kind", "")
+
+    def _send_outreach(q, item_id: str):
+        import json as _json
+
+        from .google_api import GoogleClient
+        from .outreach import record_sent, weekly_sent
+
+        item = q.items.get(item_id)
+        if item is None:
+            raise KeyError(item_id)
+        settings2 = _load("settings.yaml")
+        cap = settings2.get("outreach", {}).get("weekly_cap", 5)
+        sent_log = ROOT / "data" / "outreach_sent.jsonl"
+        if weekly_sent(sent_log) >= cap:
+            raise ValueError(f"weekly outreach cap of {cap} reached - this stays "
+                             "quality-only on purpose")
+        client = GoogleClient(ROOT / "profile")
+        if not client.connected():
+            raise ValueError("connect Gmail first (run google-auth on the Mac)")
+        contact = item.get("contact") or {}
+        to = contact.get("email")
+        if not to:
+            raise ValueError("no contact email on this item")
+        try:
+            note = _json.loads(item.get("note") or "{}")
+        except _json.JSONDecodeError:
+            note = {}
+        body = item.get("note_body") or note.get("body") or ""
+        subject = note.get("subject") or f"Just applied for the {item.get('job', {}).get('title', 'role')}"
+        if "[" in body:
+            raise ValueError("the note still has a blank in [brackets] - fill it in first")
+        client.gmail_send(to, subject, body)
+        record_sent(sent_log, item_id, to)
+        # Reuse the state machine's terminal 'submitted' to mean 'sent'.
+        q.items[item_id]["state"] = "submitted"
+        q.items[item_id]["note_sent_to"] = to
+        q._save()
+        return q.items[item_id]
+
     def _store_row(fingerprint: str) -> dict | None:
         if not store_path.exists():
             return None
@@ -693,7 +855,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
         item_id = str(body.get("id", ""))
         action = str(body.get("action", ""))
         try:
-            if action == "approve":
+            if action == "approve" and self_kind(q, item_id) == "outreach":
+                # Outreach doesn't go through the browser engine - approving it
+                # sends the note now, from her Gmail, respecting the weekly cap.
+                item = _send_outreach(q, item_id)
+            elif action == "approve":
                 item = q.transition(item_id, "approved")
             elif action == "skip":
                 item = q.transition(item_id, "skipped")
@@ -707,7 +873,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 set_status(ROOT / "data" / "status.json", item_id, "applied")
             elif action == "update":
                 item = q.update_fields(item_id, letter_body=body.get("letter_body"),
-                                       why_them=body.get("why_them"))
+                                       why_them=body.get("why_them"),
+                                       note_body=body.get("note_body"))
             else:
                 return {"ok": False, "error": f"unknown action {action}"}
         except (KeyError, ValueError) as exc:
@@ -824,6 +991,10 @@ def main(argv: list[str] | None = None) -> int:
                       help="actually submit (default: dry run, no submit click)")
     p_ar.add_argument("--limit", type=int, default=None)
 
+    sub.add_parser("google-auth", help="connect Gmail + Sheets (one-time)")
+    sub.add_parser("inbox", help="classify JobSearch mail, draft replies")
+    sub.add_parser("outreach", help="poll Clay results, queue outreach notes")
+
     p_s = sub.add_parser("show", help="print the local store")
     p_s.add_argument("--limit", type=int, default=25)
 
@@ -838,6 +1009,12 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_serve(args)
     if args.cmd == "apply-run":
         return cmd_apply_run(args)
+    if args.cmd == "google-auth":
+        return cmd_google_auth(args)
+    if args.cmd == "inbox":
+        return cmd_inbox(args)
+    if args.cmd == "outreach":
+        return cmd_outreach(args)
     return cmd_show(args)
 
 

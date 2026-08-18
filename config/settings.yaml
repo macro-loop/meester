@@ -37,3 +37,12 @@ apply:
   # harvest (null = only manual "Queue" clicks).
   auto_propose_min_score: null
   daily_cap: 15
+
+outreach:
+  # Warm outreach stays quality-only. Weekly cap on notes actually sent.
+  weekly_cap: 5
+  # Clay: her Mac POSTs {company, role, fingerprint} here; the Clay workflow
+  # enriches and exports contacts to the Google Sheet below, which her Mac
+  # polls. Both blank = outreach disabled, everything else still works.
+  clay_webhook_url: null
+  clay_sheet_id: null
