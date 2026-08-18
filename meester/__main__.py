@@ -503,9 +503,19 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             key_works = False
             print(f"API key works       : NO  ->  {type(exc).__name__}: {str(exc)[:220]}")
 
+    from .score.judge import cache_key, judged_for_report, load_cache
+
     cache = ROOT / "data" / "judge_cache.jsonl"
     cached = sum(1 for _ in cache.open(encoding="utf-8")) if cache.exists() else 0
     print(f"judge cache entries : {cached}")
+    matched = judged_for_report(rows, prefs, ledger, cache)
+    print(f"verdicts matching now: {len(matched)}   (fit % you would see)")
+    if cached and not matched and survivors:
+        fp = survivors[0].get("fingerprint", "")
+        want = cache_key(fp, prefs, ledger)
+        have = list(load_cache(cache))[:2]
+        print(f"  key MISMATCH - wanted: {want}")
+        print(f"                 cached: {have}")
     print(f"Google connected    : {GoogleClient(ROOT / 'profile').connected()}")
     print(line)
 
