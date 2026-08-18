@@ -145,6 +145,11 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/letters":
             html = self.ctx["render_letters"](self.ctx["token"])
             self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+        elif route == "/queue":
+            html = self.ctx["render_queue"](self.ctx["token"])
+            self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+        elif route == "/api/queue":
+            self._json(200, self.ctx["queue_get"]())
         elif route == "/api/profile/letters":
             self._json(200, self.ctx["letters_get"]())
         elif route == "/api/profile/preferences":
@@ -194,6 +199,9 @@ class Handler(BaseHTTPRequestHandler):
             "/api/profile/letters",
             "/api/jobs/status",
             "/api/profile/apikey",
+            "/api/queue/propose",
+            "/api/queue/action",
+            "/api/queue/run",
         ):
             self._json(404, {"error": "not found"})
             return
@@ -263,6 +271,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/profile/apikey":
             self._json(200, self.ctx["apikey_save"](body))
+            return
+
+        if route == "/api/queue/propose":
+            self._json(200, self.ctx["queue_propose"](body))
+            return
+        if route == "/api/queue/action":
+            self._json(200, self.ctx["queue_action"](body))
+            return
+        if route == "/api/queue/run":
+            self._json(200, self.ctx["queue_run"](body))
             return
 
         if route.endswith("/search"):

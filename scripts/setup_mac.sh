@@ -51,6 +51,11 @@ say "Creating virtualenv at .venv"
 shasum -a 256 "$REPO/requirements.txt" | cut -d' ' -f1 > "$REPO/.venv/.requirements.sha"
 say "Dependencies installed"
 
+# Playwright drives the application forms. The chromium download is ~150 MB
+# once; skipped silently if already present.
+say "Installing the form-filling browser (one-time, ~150 MB)"
+"$REPO/.venv/bin/python" -m playwright install chromium >/dev/null 2>&1   || warn "browser install failed - applications will queue as apply-by-hand"
+
 chmod +x "$REPO/scripts/run_harvest.sh" "$REPO/scripts/uninstall_mac.sh" 2>/dev/null || true
 
 # --- 2b. Prove this interpreter actually works --------------------------------

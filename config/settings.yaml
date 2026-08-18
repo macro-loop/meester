@@ -26,3 +26,14 @@ store:
 llm:
   # Hard stop on API calls per day - a looping bug costs one day, not a month.
   daily_call_cap: 300
+
+apply:
+  # The one flip: false = every application waits for her tap in the queue.
+  # After the supervised thirty prove the adapters, set true and matches at or
+  # above auto_propose_min_score are approved automatically. Dream-list
+  # companies always wait for her regardless.
+  auto_submit: false
+  # Propose For-you matches at/above this gate score into the queue each
+  # harvest (null = only manual "Queue" clicks).
+  auto_propose_min_score: null
+  daily_cap: 15

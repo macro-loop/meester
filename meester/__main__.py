@@ -164,11 +164,75 @@ async def cmd_harvest(args: argparse.Namespace) -> int:
             if line
         ]
         prefs, ledger = _profile_bits()
+        statuses = _statuses()
+
+        # LLM judge on gate survivors - only bills for genuinely new work, only
+        # runs with a key on disk, and a failure never loses the harvest.
+        judge: dict = {}
+        try:
+            from .llm import LLM, available
+            from .score.judge import judge_survivors, judged_for_report
+
+            cache_path = ROOT / "data" / "judge_cache.jsonl"
+            if available(ROOT / "profile"):
+                llm = LLM(ROOT / "profile", ROOT / "data",
+                          daily_cap=settings.get("llm", {}).get("daily_call_cap", 300))
+                judge = judge_survivors(rows, prefs, ledger, cache_path, llm)
+                if judge:
+                    print(f"judge: {len(judge)} roles judged "
+                          f"({llm.calls_today()} API calls today)")
+            else:
+                judge = judged_for_report(rows, prefs, ledger, cache_path)
+        except Exception as exc:  # noqa: BLE001
+            print(f"warning: judge skipped ({type(exc).__name__}: {exc})")
+
+        # Auto-propose (never auto-submit unless the flip has been made):
+        # strong matches enter the queue as `proposed` and wait for her tap.
+        apply_cfg = settings.get("apply", {})
+        threshold = apply_cfg.get("auto_propose_min_score")
+        if threshold is not None:
+            try:
+                from .apply.queue import Queue
+                from .score.gates import score_job
+
+                q = Queue(ROOT / "data" / "queue.json")
+                proposed = 0
+                for row in rows:
+                    fp = row.get("fingerprint") or ""
+                    if not fp or q.has(fp):
+                        continue
+                    if statuses.get(fp, {}).get("state") in ("applied", "hidden"):
+                        continue
+                    verdict = score_job(row, prefs, ledger)
+                    if not verdict["match"] or verdict["score"] < threshold:
+                        continue
+                    item = q.propose(fp, "application", {
+                        "job": {"title": row.get("title"),
+                                "company": row.get("company"),
+                                "url": row.get("url"),
+                                "apply_url": row.get("apply_url"),
+                                "source": row.get("source")},
+                        "score": verdict["score"], "reasons": verdict["reasons"],
+                    })
+                    if item:
+                        proposed += 1
+                        # The one flip. Dream companies always wait for her.
+                        if apply_cfg.get("auto_submit") and not verdict["dream"]:
+                            q.transition(fp, "approved")
+                if proposed:
+                    print(f"queue: {proposed} application(s) proposed")
+            except Exception as exc:  # noqa: BLE001
+                print(f"warning: auto-propose skipped ({type(exc).__name__}: {exc})")
+
         out = build_report(
             rows, ROOT / store_cfg.get("report_path", "data/jobs.html"),
-            prefs=prefs, ledger=ledger,
+            prefs=prefs, ledger=ledger, statuses=statuses, judge=judge,
         )
         print(f"report: {out}\n")
+
+        from .report import _prepare
+
+        _notify_new_matches(_prepare(rows, prefs, ledger, statuses, judge))
     except Exception as exc:  # noqa: BLE001
         print(f"warning: could not write report ({type(exc).__name__}: {exc})\n")
 
@@ -227,6 +291,38 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_apply_run(args: argparse.Namespace) -> int:
+    """Process approved queue items. Dry-run by default; --live submits."""
+    from .apply.engine import Engine
+    from .apply.queue import Queue
+    from .status import set_status
+
+    settings = _load("settings.yaml")
+    prefs, ledger = _profile_bits()
+    resume = None
+    for name in ("resume.pdf", "resume.docx"):
+        if (ROOT / "profile" / name).exists():
+            resume = ROOT / "profile" / name
+            break
+
+    queue = Queue(ROOT / "data" / "queue.json")
+    engine = Engine(
+        queue=queue, profile=prefs, ledger=ledger, resume_path=resume,
+        evidence_dir=ROOT / "data" / "evidence",
+        paused_file=ROOT / "PAUSED",
+        daily_cap=settings.get("apply", {}).get("daily_cap", 15),
+    )
+    outcomes = engine.run(dry_run=not args.live, limit=args.limit)
+    for outcome in outcomes:
+        detail = outcome.get("reason", outcome.get("error", ""))
+        print(f"  {outcome.get('outcome', '?'):<12} {outcome.get('id', '')} {detail[:80]}")
+        if outcome.get("outcome") == "submitted":
+            set_status(ROOT / "data" / "status.json", outcome["id"], "applied")
+    if not outcomes:
+        print("  nothing approved and waiting")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     """Local-only web UI: watchlist, profile, updates - no terminal needed."""
     from .harvest.base import BoardClient
@@ -236,6 +332,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         build_companies_page,
         build_letters_page,
         build_profile_page,
+        build_queue_page,
         build_report,
         build_resume_page,
     )
@@ -515,6 +612,125 @@ def cmd_serve(args: argparse.Namespace) -> int:
             "warnings": {str(i): w for i, l in enumerate(clean) if (w := lint_placeholders(l["body"]))},
         }
 
+    def _queue():
+        from .apply.queue import Queue
+
+        return Queue(ROOT / "data" / "queue.json")
+
+    def _store_row(fingerprint: str) -> dict | None:
+        if not store_path.exists():
+            return None
+        with store_path.open(encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip():
+                    row = json.loads(line)
+                    if row.get("fingerprint") == fingerprint:
+                        return row
+        return None
+
+    def queue_get() -> dict:
+        q = _queue()
+        q.expire_stale()
+        return {
+            "waiting": q.by_state("proposed", "needs_human"),
+            "approved": q.by_state("approved"),
+            "done": q.by_state("submitted", "failed", "skipped", "expired")[:30],
+            "submitted_today": q.submitted_today(),
+        }
+
+    def queue_propose(body: dict) -> dict:
+        from .profile import load_letters
+        from .score.gates import score_job
+
+        fingerprint = str(body.get("fingerprint", "")).strip()
+        row = _store_row(fingerprint)
+        if row is None:
+            return {"ok": False, "error": "job not found in the store"}
+        statuses = _statuses()
+        if statuses.get(fingerprint, {}).get("state") == "applied":
+            return {"ok": False, "error": "already marked applied"}
+        q = _queue()
+        if q.has(fingerprint):
+            return {"ok": False, "error": "already in the queue"}
+
+        prefs, ledger = _profile_bits()
+        verdict = score_job(row, prefs, ledger)
+        letters = load_letters(ROOT / "profile" / "cover_letters.yaml")
+        letter = letters[0] if letters else {"name": "", "body": ""}
+
+        # Draft {why_them} now, so what she approves is the final text.
+        why_them = ""
+        try:
+            from .llm import LLM, MODEL_STRONG, available
+
+            if available(ROOT / "profile") and "{why_them}" in letter["body"]:
+                llm = LLM(ROOT / "profile", ROOT / "data",
+                          daily_cap=settings.get("llm", {}).get("daily_call_cap", 300))
+                out = llm.call_json(
+                    "Write one specific, true sentence a candidate could say about "
+                    f"why {row.get('company')} interests them, drawn ONLY from this "
+                    f"job posting - no flattery, no invented facts:\n\n"
+                    f"{(row.get('description') or '')[:3000]}\n\n"
+                    'Reply as JSON: {"why_them": "<one sentence>"}',
+                    model=MODEL_STRONG, max_tokens=200,
+                )
+                why_them = str(out.get("why_them", ""))[:400]
+        except Exception:  # noqa: BLE001 - keyless or failed: she fills the blank
+            why_them = ""
+
+        item = q.propose(fingerprint, "application", {
+            "job": {"title": row.get("title"), "company": row.get("company"),
+                    "url": row.get("url"), "apply_url": row.get("apply_url"),
+                    "source": row.get("source")},
+            "score": verdict["score"], "reasons": verdict["reasons"],
+            "letter_name": letter["name"], "letter_body": letter["body"],
+            "why_them": why_them,
+        })
+        return {"ok": True, "item": item}
+
+    def queue_action(body: dict) -> dict:
+        q = _queue()
+        item_id = str(body.get("id", ""))
+        action = str(body.get("action", ""))
+        try:
+            if action == "approve":
+                item = q.transition(item_id, "approved")
+            elif action == "skip":
+                item = q.transition(item_id, "skipped")
+            elif action == "retry":
+                item = q.transition(item_id, "approved")
+            elif action == "did-it-myself":
+                item = q.transition(item_id, "submitted", confirmed=False,
+                                    note="applied by hand")
+                from .status import set_status
+
+                set_status(ROOT / "data" / "status.json", item_id, "applied")
+            elif action == "update":
+                item = q.update_fields(item_id, letter_body=body.get("letter_body"),
+                                       why_them=body.get("why_them"))
+            else:
+                return {"ok": False, "error": f"unknown action {action}"}
+        except (KeyError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "item": item}
+
+    def queue_run(body: dict) -> dict:
+        import os as _os
+        import subprocess
+        import sys as _sys
+
+        # Detached: the engine paces itself for minutes and must not hold an
+        # HTTP request open. Live mode - it only ever touches approved items.
+        kwargs = {}
+        if _os.name == "posix":
+            kwargs["start_new_session"] = True
+        subprocess.Popen(
+            [_sys.executable, "-m", "meester", "apply-run", "--live"],
+            cwd=str(ROOT), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            **kwargs,
+        )
+        return {"ok": True, "started": True}
+
     def job_status_set(body: dict) -> dict:
         from .status import set_status
 
@@ -553,6 +769,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "render_letters": build_letters_page,
         "letters_get": letters_get,
         "letters_save": letters_save,
+        "render_queue": build_queue_page,
+        "queue_get": queue_get,
+        "queue_propose": queue_propose,
+        "queue_action": queue_action,
+        "queue_run": queue_run,
     }
 
     httpd = serve(ctx, port=args.port)
@@ -598,6 +819,11 @@ def main(argv: list[str] | None = None) -> int:
     p_srv = sub.add_parser("serve", help="local UI for editing the watchlist")
     p_srv.add_argument("--port", type=int, default=8765)
 
+    p_ar = sub.add_parser("apply-run", help="process approved queue items")
+    p_ar.add_argument("--live", action="store_true",
+                      help="actually submit (default: dry run, no submit click)")
+    p_ar.add_argument("--limit", type=int, default=None)
+
     p_s = sub.add_parser("show", help="print the local store")
     p_s.add_argument("--limit", type=int, default=25)
 
@@ -610,6 +836,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_report(args)
     if args.cmd == "serve":
         return cmd_serve(args)
+    if args.cmd == "apply-run":
+        return cmd_apply_run(args)
     return cmd_show(args)
 
 

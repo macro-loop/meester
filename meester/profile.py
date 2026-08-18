@@ -107,6 +107,79 @@ PREF_FIELDS: list[dict] = [
         "min": 1, "max": 100, "placeholder": "10",
         "help": "Quality beats volume - the realistic useful range is 5 to 25.",
     },
+    # --- Application answers ------------------------------------------------------
+    # Used only to fill application forms. The rule the applier lives by: a
+    # question is answered from here by exact match or the application stops
+    # and asks her. "Always ask me" is therefore the safe default everywhere.
+    {
+        "key": "app_first_name", "section": "Application answers", "type": "text",
+        "label": "First name, as it should appear on applications",
+    },
+    {
+        "key": "app_last_name", "section": "Application answers", "type": "text",
+        "label": "Last name",
+    },
+    {
+        "key": "app_email", "section": "Application answers", "type": "text",
+        "label": "Email on applications", "placeholder": "you@example.com",
+    },
+    {
+        "key": "app_phone", "section": "Application answers", "type": "text",
+        "label": "Phone", "placeholder": "+1 555 010 1234",
+    },
+    {
+        "key": "app_location", "section": "Application answers", "type": "text",
+        "label": "Location as forms should see it", "placeholder": "Austin, TX, United States",
+    },
+    {
+        "key": "app_linkedin", "section": "Application answers", "type": "text",
+        "label": "LinkedIn URL", "placeholder": "https://linkedin.com/in/...",
+    },
+    {
+        "key": "app_portfolio", "section": "Application answers", "type": "text",
+        "label": "Portfolio / website URL",
+    },
+    {
+        "key": "app_github", "section": "Application answers", "type": "text",
+        "label": "GitHub URL (if relevant to your field)",
+    },
+    {
+        "key": "auth_us", "section": "Application answers", "type": "select",
+        "label": "Are you legally authorized to work in the United States?",
+        "options": ["", "yes", "no"], "empty_label": "Always ask me",
+        "help": "Left as 'Always ask me', every application with this question "
+                "waits for you. Answer it here once and they don't.",
+    },
+    {
+        "key": "eeo_gender", "section": "Application answers", "type": "select",
+        "label": "Gender (voluntary EEO question on US forms)",
+        "options": ["", "male", "female", "non-binary", "prefer not to say"],
+        "empty_label": "Always ask me",
+    },
+    {
+        "key": "eeo_race", "section": "Application answers", "type": "select",
+        "label": "Race / ethnicity (voluntary EEO question)",
+        "options": ["", "american indian or alaska native", "asian",
+                    "black or african american", "hispanic or latino",
+                    "native hawaiian or other pacific islander", "white",
+                    "two or more races", "prefer not to say"],
+        "empty_label": "Always ask me",
+    },
+    {
+        "key": "eeo_veteran", "section": "Application answers", "type": "select",
+        "label": "Veteran status (voluntary EEO question)",
+        "options": ["", "i am not a protected veteran",
+                    "i identify as one or more of the classes of protected veteran",
+                    "prefer not to say"],
+        "empty_label": "Always ask me",
+    },
+    {
+        "key": "eeo_disability", "section": "Application answers", "type": "select",
+        "label": "Disability (voluntary EEO question)",
+        "options": ["", "no, i do not have a disability",
+                    "yes, i have a disability", "prefer not to say"],
+        "empty_label": "Always ask me",
+    },
 ]
 
 _BY_KEY = {f["key"]: f for f in PREF_FIELDS}
@@ -410,6 +483,7 @@ def schema_for_client() -> list[dict]:
     """What the form-rendering JS needs; excludes nothing today but keeps the
     server free to add private schema fields later."""
     return [
-        {k: f[k] for k in ("key", "section", "type", "label", "help", "options", "placeholder", "min", "max") if k in f}
+        {k: f[k] for k in ("key", "section", "type", "label", "help", "options",
+                           "placeholder", "min", "max", "empty_label") if k in f}
         for f in PREF_FIELDS
     ]

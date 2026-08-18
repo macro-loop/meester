@@ -965,6 +965,223 @@ api('/api/profile/letters').then(d => {
 """
 
 
+def build_queue_page(token: str) -> str:
+    """The approve queue: nothing acts in her name except through here."""
+    return _QUEUE_TEMPLATE.replace("__SHARED_CSS__", _SHARED_CSS).replace(
+        "__TOKEN__", token
+    )
+
+
+_QUEUE_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Approve queue</title>
+<style>
+__SHARED_CSS__
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin:26px 0 18px;
+    gap:10px;flex-wrap:wrap}
+  .topbar a.back{margin:0}
+  button{font-family:inherit;font-size:14.5px;font-weight:600;padding:10px 18px;
+    border-radius:6px;border:1px solid var(--accent);background:var(--accent);
+    color:#fff;cursor:pointer;min-height:42px}
+  button.ghost{background:none;color:var(--accent)}
+  button.warn{border-color:var(--bad);background:none;color:var(--bad)}
+  button:disabled{opacity:.5;cursor:default}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) button{color:#0A121A}
+    :root:not([data-theme="light"]) button.ghost{color:var(--accent)}
+    :root:not([data-theme="light"]) button.warn{color:var(--bad)}
+  }
+  h2{font-size:15px;font-weight:640;margin:26px 0 8px;color:var(--soft)}
+  .count{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    padding:16px;margin:10px 0}
+  .card h3{font-size:16px;margin:0}
+  .card h3 a{color:var(--ink);text-decoration:none}
+  .card h3 a:hover{color:var(--accent)}
+  .co{color:var(--muted);font-size:13.5px;margin:2px 0 0}
+  .chipline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+  .state{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+    text-transform:uppercase;border-radius:3px;padding:2px 7px}
+  .state.proposed{background:var(--accent-soft);color:var(--accent)}
+  .state.needs_human{background:var(--bad-soft);color:var(--bad)}
+  .state.approved{background:var(--accent);color:#fff}
+  .state.submitted{background:var(--line-soft);color:var(--soft)}
+  .state.failed,.state.expired,.state.skipped{background:var(--line-soft);color:var(--muted)}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) .state.approved{color:#0A121A}
+  }
+  .why{font-size:12.5px;color:var(--accent)}
+  .needs{font-size:13.5px;color:var(--bad);margin:8px 0;padding:9px 12px;
+    background:var(--bad-soft);border-radius:6px}
+  details{margin:10px 0}
+  summary{font-size:13px;color:var(--accent);cursor:pointer}
+  textarea{width:100%;padding:9px 11px;font-size:14px;font-family:inherit;
+    color:var(--ink);background:var(--ground);border:1px solid var(--line);
+    border-radius:6px;line-height:1.5;resize:vertical;margin-top:8px}
+  label{display:block;font-size:12.5px;font-weight:600;margin-top:8px}
+  .buttons{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .blank-warn{font-size:12.5px;color:var(--bad)}
+  .msg{padding:10px 14px;border-radius:6px;font-size:14px;display:none;margin:12px 0}
+  .msg.ok{display:block;background:var(--accent-soft);border-left:2px solid var(--accent)}
+  .msg.err{display:block;background:var(--bad-soft);border-left:2px solid var(--bad)}
+  .empty{color:var(--muted);font-size:14px;padding:8px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div><a class="back" href="/jobs">&larr; Jobs</a>&ensp;&middot;&ensp;<a class="back" href="/profile">Profile</a></div>
+    <button class="ghost" id="run">Submit approved now</button>
+  </div>
+  <h1>Approve queue</h1>
+  <p class="sub">Nothing is sent anywhere without your tap. Approving an
+    application means it submits on the next run &mdash; exactly what the card
+    shows, no more.</p>
+  <div class="msg" id="msg"></div>
+  <div id="lists"><p class="empty">Loading&hellip;</p></div>
+</div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const msg = document.getElementById('msg');
+
+function say(text, ok) {
+  msg.textContent = text;
+  msg.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? {'Content-Type':'application/json','X-Meester-Token':TOKEN} : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('request failed (' + res.status + ')'));
+  return data;
+}
+
+function finalLetter(item) {
+  return (item.letter_body || '')
+    .replace(/\\{company\\}/g, (item.job || {}).company || '')
+    .replace(/\\{role\\}/g, (item.job || {}).title || '')
+    .replace(/\\{why_them\\}/g, item.why_them || '{why_them}');
+}
+
+function hasBlanks(item) {
+  return /\\{[a-zA-Z_]+\\}/.test(finalLetter(item));
+}
+
+function card(item) {
+  const job = item.job || {};
+  const editable = ['proposed', 'approved', 'needs_human'].includes(item.state);
+  const blanks = item.letter_body && hasBlanks(item);
+  let buttons = '';
+  if (item.state === 'proposed')
+    buttons = '<button data-act="approve"' + (blanks ? ' disabled' : '') + '>Approve</button>'
+      + '<button class="ghost" data-act="skip">Skip</button>'
+      + (blanks ? '<span class="blank-warn">Fill the letter blank below first</span>' : '');
+  else if (item.state === 'needs_human')
+    buttons = '<a href="' + esc(job.apply_url || job.url) + '" target="_blank" rel="noopener">'
+      + '<button class="ghost" type="button">Open the application</button></a>'
+      + '<button data-act="did-it-myself">I applied by hand</button>'
+      + '<button class="ghost" data-act="retry">Try again</button>'
+      + '<button class="warn" data-act="skip">Skip</button>';
+  else if (item.state === 'approved')
+    buttons = '<button class="warn" data-act="skip">Withdraw</button>';
+
+  const letter = item.letter_body ? (
+    '<details' + (blanks ? ' open' : '') + '><summary>Cover letter'
+    + (blanks ? ' - has a blank to fill' : '') + '</summary>'
+    + (editable && (item.letter_body || '').includes('{why_them}')
+       ? '<label>Why them - one true sentence (fills {why_them})</label>'
+         + '<textarea data-f="why_them" rows="2">' + esc(item.why_them || '') + '</textarea>'
+       : '')
+    + '<label>Letter as it would be sent</label>'
+    + '<textarea data-f="letter" rows="7" ' + (editable ? '' : 'readonly')
+    + '>' + esc(editable ? item.letter_body : finalLetter(item)) + '</textarea>'
+    + (editable ? '<div class="buttons"><button class="ghost" data-act="update">Save letter</button></div>' : '')
+    + '</details>') : '';
+
+  return '<div class="card" data-id="' + esc(item.id) + '">'
+    + '<h3><a href="' + esc(job.url || '') + '" target="_blank" rel="noopener">'
+    + esc(job.title || '?') + '</a></h3>'
+    + '<p class="co">' + esc(job.company || '') + '</p>'
+    + '<div class="chipline"><span class="state ' + esc(item.state) + '">'
+    + esc(item.state.replace('_', ' ')) + '</span>'
+    + '<span class="why">' + (item.reasons || []).map(esc).join(' \\u00b7 ') + '</span></div>'
+    + (item.needs ? '<div class="needs">' + esc(item.needs) + '</div>' : '')
+    + (item.note ? '<p class="co">' + esc(item.note) + '</p>' : '')
+    + letter
+    + (buttons ? '<div class="buttons">' + buttons + '</div>' : '')
+    + '</div>';
+}
+
+function section(title, items, emptyText) {
+  return '<h2>' + title + ' <span class="count">' + items.length + '</span></h2>'
+    + (items.length ? items.map(card).join('') : '<p class="empty">' + emptyText + '</p>');
+}
+
+let DATA = null;
+
+function draw() {
+  document.getElementById('lists').innerHTML =
+    section('Waiting for you', DATA.waiting, 'Nothing needs you right now.')
+    + section('Approved - will submit on the next run', DATA.approved, 'None approved.')
+    + section('Recently done', DATA.done, 'Nothing yet.');
+  document.querySelectorAll('.card [data-act]').forEach(b =>
+    b.addEventListener('click', () => act(b)));
+}
+
+async function act(button) {
+  const cardEl = button.closest('.card');
+  const id = cardEl.dataset.id;
+  const action = button.dataset.act;
+  const body = {id, action};
+  if (action === 'update') {
+    const letterEl = cardEl.querySelector('[data-f="letter"]');
+    const whyEl = cardEl.querySelector('[data-f="why_them"]');
+    if (letterEl) body.letter_body = letterEl.value;
+    if (whyEl) body.why_them = whyEl.value;
+  }
+  button.disabled = true;
+  try {
+    const res = await api('/api/queue/action', body);
+    if (!res.ok) { say(res.error, false); button.disabled = false; return; }
+    say(action === 'approve' ? 'Approved - it submits on the next run.'
+        : action === 'update' ? 'Saved.' : 'Done.', true);
+    await load();
+  } catch (e) { say(e.message, false); button.disabled = false; }
+}
+
+async function load() {
+  DATA = await api('/api/queue');
+  draw();
+}
+
+document.getElementById('run').addEventListener('click', async () => {
+  try {
+    await api('/api/queue/run', {});
+    say('Submitting approved applications in the background - this page will '
+        + 'show results as they land. Reload in a few minutes.', true);
+  } catch (e) { say(e.message, false); }
+});
+
+load().catch(e => say(e.message, false));
+</script>
+</body>
+</html>
+"""
+
+
 def build_profile_page(token: str) -> str:
     """The preferences form. Rendered entirely from the schema the server
     sends, so a new preference field needs zero template changes."""
@@ -1097,7 +1314,7 @@ function control(f, value) {
   } else if (f.type === 'select') {
     inner += '<select id="' + id + '">' + f.options.map(o =>
       '<option value="' + esc(o) + '"' + (o === (value || '') ? ' selected' : '') + '>'
-      + (o ? esc(o) : 'No preference') + '</option>').join('') + '</select>';
+      + (o ? esc(o) : esc(f.empty_label || 'No preference')) + '</option>').join('') + '</select>';
   } else {
     const mode = f.type === 'number' ? ' inputmode="numeric"' : '';
     inner += '<input type="text" id="' + id + '"' + ph + mode
@@ -1319,6 +1536,7 @@ _TEMPLATE = """<!doctype html>
         <a class="manage" href="http://127.0.0.1:8765/profile">Your profile</a>
         <a class="manage" href="http://127.0.0.1:8765/resume">Your CV</a>
         <a class="manage" href="http://127.0.0.1:8765/letters">Letters</a>
+        <a class="manage" href="http://127.0.0.1:8765/queue">Queue</a>
         <a class="manage" href="http://127.0.0.1:8765/companies">Add companies &rarr;</a>
         <button class="upill" id="upill" hidden>Update available</button>
       </div>
@@ -1414,6 +1632,19 @@ document.getElementById('list').addEventListener('click', async ev => {{
   ev.preventDefault();
   const j = JOBS.find(x => x.id === b.dataset.fp);
   if (!j) return;
+  if (b.dataset.queue) {{
+    b.disabled = true;
+    try {{
+      const res = await fetch('/api/queue/propose', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json', 'X-Meester-Token': SERVED_TOKEN}},
+        body: JSON.stringify({{fingerprint: j.id}})
+      }});
+      const d = await res.json();
+      b.textContent = d.ok ? 'Queued \u2713' : (d.error || 'Failed');
+    }} catch (e) {{ b.disabled = false; }}
+    return;
+  }}
   const next = j.st === b.dataset.set ? null : b.dataset.set;
   b.disabled = true;
   try {{

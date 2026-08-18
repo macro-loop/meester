@@ -177,6 +177,21 @@ if interactive; then
   printf 'Open the results: the "Remote jobs" file on the Desktop\n\n'
 fi
 
+# --- apply engine -------------------------------------------------------------
+# Submits ONLY items she has approved in the queue (or that policy auto-
+# approved, when that flip is ever made). PAUSED, the daily cap and CAPTCHA
+# refusal are enforced inside the engine itself, not here.
+if [[ ! -f "$REPO/PAUSED" ]]; then
+  APPLY_OUT="$("$PY" -m meester apply-run --live 2>&1)"
+  if [[ -n "$APPLY_OUT" ]] && ! grep -q "nothing approved" <<<"$APPLY_OUT"; then
+    log "apply engine:"
+    printf '%s
+' "$APPLY_OUT" | sed 's/^/    /' >> "$LOG"
+    if interactive; then printf '%s
+' "$APPLY_OUT" | sed 's/^/    /'; fi
+  fi
+fi
+
 # --- log rotation -------------------------------------------------------------
 # Unattended jobs that log forever eventually fill a 256GB laptop.
 if [[ -f "$LOG" ]] && [[ "$(wc -l < "$LOG")" -gt 5000 ]]; then
