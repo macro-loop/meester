@@ -77,6 +77,11 @@ def _append(path: Path, rows: list[dict]) -> None:
 
 def _ledger_summary(ledger: dict) -> str:
     parts: list[str] = []
+    # Her own summary leads the picture the judge forms - it is the one place
+    # she states her direction in her words, so it should shape the match, not
+    # just sit on the record.
+    if ledger.get("summary"):
+        parts.append(str(ledger["summary"]).strip())
     for e in (ledger.get("employment") or [])[:8]:
         bullets = "; ".join((e.get("bullets") or [])[:4])
         parts.append(
