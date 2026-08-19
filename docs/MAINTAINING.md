@@ -99,12 +99,12 @@ Work down this list. Stop when it's fixed.
 
 Create an empty file called **`PAUSED`** (no extension) in the `Meester` folder.
 Finder is fine; no terminal needed. Everything halts: no harvests, no
-applications, no mail. Delete the file to resume.
+applications, no mail. Delete the file to resume. Or run `/unpause`.
 
 > **Important:** while `PAUSED` exists, updates don't arrive either. If you pause
 > it and then push a fix, the fix will not install on its own. Use the **Update
 > available** button — that still works while paused — or delete `PAUSED` once
-> you're ready.
+> you're ready (`/unpause`).
 
 ### Tier 1 — Undo the change
 
