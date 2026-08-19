@@ -25,7 +25,16 @@ gh api -X PUT repos/macro-loop/meester/collaborators/HER_GITHUB_USERNAME -f perm
 She gets an email invite and has to accept it. Do this a day early, so a stalled
 invite doesn't eat the session.
 
-Confirm it took:
+Confirm it took. Check the **invitations** endpoint, not the collaborators one —
+`collaborators` lists only people who have already accepted, so straight after
+inviting it shows William alone, which looks exactly like a failure:
+
+```
+gh api repos/macro-loop/meester/invitations --jq '.[] | "\(.invitee.login)  \(.permissions)"'
+```
+
+Once she has accepted, the invitation disappears from that list and she appears
+here instead:
 
 ```
 gh api repos/macro-loop/meester/collaborators --jq '.[].login'
