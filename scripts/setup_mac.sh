@@ -12,6 +12,29 @@ say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m warning:\033[0m %s\n' "$*"; }
 die() { printf '\033[31m error:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# --- 0. Am I allowed to take over the schedule? -------------------------------
+# REPO is derived from this script's own location, but the launchd labels below
+# are fixed. Running this from a second clone (a dev checkout, say) would
+# silently repoint her live job search at a folder with no profile/ and no
+# data/ - the search would appear to keep running while finding nothing and
+# knowing nothing about her. That is a very quiet way to lose a week.
+#
+# Only this guard distinguishes "installing" from "hijacking".
+if [[ -f "$PLIST" ]] && ! grep -q "<string>$REPO/scripts/run_harvest.sh</string>" "$PLIST" 2>/dev/null; then
+  if [[ -z "${MEESTER_FORCE:-}" ]]; then
+    die "the scheduled job currently runs from another folder, not this one:
+      $REPO
+
+  Running setup here would move her live job search to this folder. If this is a
+  dev clone, you do not want that - a dev clone has no profile/ and no data/, so
+  the search would keep running while knowing nothing about her.
+
+  Nothing has been changed. To move the installation deliberately:
+      MEESTER_FORCE=1 $0"
+  fi
+  warn "MEESTER_FORCE set - moving the installation to $REPO"
+fi
+
 # --- 1. Python ----------------------------------------------------------------
 # macOS still ships an old system Python. Find a real one rather than silently
 # half-working on 3.9.
@@ -57,6 +80,10 @@ say "Installing the form-filling browser (one-time, ~150 MB)"
 "$REPO/.venv/bin/python" -m playwright install chromium >/dev/null 2>&1   || warn "browser install failed - applications will queue as apply-by-hand"
 
 chmod +x "$REPO/scripts/run_harvest.sh" "$REPO/scripts/uninstall_mac.sh" 2>/dev/null || true
+
+# The pre-push gate is per-clone local config and does not travel with a clone.
+# Set it wherever we can, so no checkout is ever silently ungated.
+git -C "$REPO" config core.hooksPath scripts/githooks 2>/dev/null || true
 
 # --- 2b. Prove this interpreter actually works --------------------------------
 # Exercises one real path through every module. Catches a version incompatibility
