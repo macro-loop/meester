@@ -14,6 +14,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
+# What to tell her when the automatic path gives up. Exported so the tests can
+# assert on the contract - "this state needs a person" - rather than on the
+# wording, which is aimed at her and will keep being reworded.
+NEEDS_A_HUMAN = "open the dev folder and ask Claude"
+
+
 def _git(repo: Path, *args: str, timeout: float = 20.0) -> tuple[int, str, str]:
     try:
         proc = subprocess.run(
@@ -87,7 +93,7 @@ def update(repo: Path) -> dict:
         return {
             "ok": False,
             "error": "files on this machine have local changes, so updating "
-            "automatically isn't safe - tell William",
+            f"automatically isn't safe - {NEEDS_A_HUMAN}",
         }
     if st.behind == 0:
         return {"ok": True, "changed": False, "old": st.sha, "new": st.sha}
@@ -96,7 +102,7 @@ def update(repo: Path) -> dict:
     if rc != 0:
         return {
             "ok": False,
-            "error": "the update couldn't be applied automatically - tell William",
+            "error": f"the update couldn't be applied automatically - {NEEDS_A_HUMAN}",
             "detail": err[-400:],
         }
 

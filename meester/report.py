@@ -1836,7 +1836,7 @@ fetch('http://127.0.0.1:8765/api/status', {{mode: 'cors'}})
           }}).catch(() => {{}});
         }}, 1500);
       }} catch (e) {{
-        upill.textContent = 'Update failed \\u2014 tell William';
+        upill.textContent = 'Update failed \\u2014 ask Claude in the dev folder';
         upill.disabled = false;
       }}
     }});

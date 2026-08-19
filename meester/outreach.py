@@ -1,7 +1,7 @@
 """Warm outreach: the ~11x lever the master plan is built around.
 
 When an application lands at a target-tier company, a hiring-manager contact is
-sought through Clay (POST to a webhook table in William's workspace; the Clay
+sought through Clay (POST to a webhook table in the Clay workspace; the Clay
 workflow enriches and exports to a Google Sheet her Mac can read), a short note
 is drafted, and it becomes a queue item of kind `outreach` on the same approve
 surface as applications. Nothing sends without her tap, and the weekly cap keeps
@@ -46,8 +46,8 @@ def request_contact(webhook_url: str, company: str, role: str, job_url: str,
 def poll_contacts(client, spreadsheet_id: str) -> dict[str, dict]:
     """Read the Clay export sheet -> {fingerprint: {name, email, title, linkedin}}.
 
-    Expects a header row; column names are matched loosely so William's exact
-    Clay column labels don't have to be perfect."""
+    Expects a header row; column names are matched loosely so the exact Clay
+    column labels don't have to be perfect."""
     rows = client.sheet_rows(spreadsheet_id)
     if not rows:
         return {}

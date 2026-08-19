@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from meester.update import check, update
+from meester.update import NEEDS_A_HUMAN, check, update
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -82,13 +82,13 @@ def test_update_when_current_is_a_clean_noop(repos):
 
 def test_local_changes_block_the_update_with_a_human_message(repos):
     """The whole design rests on her repo staying pullable; if it isn't, the
-    answer must be 'tell William', never a silent merge attempt."""
+    answer must be to route it to a person, never a silent merge attempt."""
     author, hers = repos
     push_change(author, "v2")
     (hers / "file.txt").write_text("hand-edited", encoding="utf-8")
     result = update(hers)
     assert not result["ok"]
-    assert "William" in result["error"]
+    assert NEEDS_A_HUMAN in result["error"]
     # And nothing was clobbered.
     assert (hers / "file.txt").read_text(encoding="utf-8") == "hand-edited"
 
@@ -101,7 +101,7 @@ def test_diverged_history_fails_softly(repos):
     git(hers, "commit", "-q", "-m", "local commit")
     result = update(hers)
     assert not result["ok"]
-    assert "William" in result["error"]
+    assert NEEDS_A_HUMAN in result["error"]
 
 
 def test_not_a_repo_is_an_error_not_a_crash(tmp_path):
