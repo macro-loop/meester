@@ -5,6 +5,8 @@ callback function inside the result dict, json.dumps threw mid-response, and
 the client got an empty reply at the exact moment it needed the answer.
 """
 
+from __future__ import annotations
+
 import json
 import sys
 import threading
