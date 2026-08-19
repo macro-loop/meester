@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote -v)",
+      "Bash(bash -n:*)",
+      "Bash(.venv/bin/python -m pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(tail:*)",
+      "Bash(head:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(~/Meester/.venv/bin/python -m meester doctor)",
+      "Bash(git -C ~/Meester status:*)",
+      "Bash(git -C ~/Meester log:*)"
+    ]
+  }
+}
