@@ -1,0 +1,6 @@
+# Development only. Production's .venv deliberately does NOT install this:
+# run_harvest.sh reinstalls whenever requirements.txt's hash moves, and there is
+# no reason to churn her laptop's venv for a test runner it never executes.
+#
+# Installed by scripts/setup_dev.sh, and needed by scripts/githooks/pre-push.
+pytest>=8

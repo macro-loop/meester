@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Blocks a push that would break the machine this runs on unattended.
 #
-# There is no CI and no staging. Whatever lands on master executes on her laptop
-# within the hour, with nobody watching. This hook is the only gate.
+# There is no CI gate. Whatever lands on master executes on her laptop within the
+# hour, with nobody watching. GitHub Actions re-runs these same checks after the
+# fact, but this hook is what stops a bad push from ever leaving.
 #
 # Enable once:  git config core.hooksPath scripts/githooks
+# scripts/setup_dev.sh and scripts/setup_mac.sh both do this for you.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -40,11 +42,23 @@ if [[ -n "$LEAKED" ]]; then
 fi
 
 # --- 3. tests must pass -------------------------------------------------------
+# The venv comes FIRST. The tests import httpx, yaml and playwright, and pytest
+# itself is only in requirements-dev.txt - none of which a Mac's system python3
+# has. Picking the system interpreter turns every push into a wall of
+# ModuleNotFoundError that reads like "your tests are broken" when nothing is
+# wrong with them at all.
 PY=""
-for c in python python3; do
-  command -v "$c" >/dev/null 2>&1 && { PY="$c"; break; }
+for c in "$REPO/.venv/bin/python" "$REPO/.venv/Scripts/python.exe" python3 python; do
+  if [[ -x "$c" ]] || command -v "$c" >/dev/null 2>&1; then PY="$c"; break; fi
 done
-[[ -n "$PY" ]] || fail "no python found to run the tests"
+[[ -n "$PY" ]] || fail "no python found to run the tests. Run ./scripts/setup_dev.sh first."
+
+# Distinguish "pytest isn't installed" from "the tests fail". They need
+# completely different responses and the raw output does not make that obvious.
+if ! "$PY" -c 'import pytest' >/dev/null 2>&1; then
+  fail "$PY has no pytest, so the tests cannot run.
+  Run ./scripts/setup_dev.sh in this folder, then push again."
+fi
 
 if ! "$PY" -m pytest tests/ -q >/tmp/meester_pretest.log 2>&1; then
   tail -25 /tmp/meester_pretest.log >&2
