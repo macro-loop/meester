@@ -52,8 +52,8 @@ checkout with no `profile/` and no `data/`.
 
 Never edit the folder the scheduled job runs from. Any edit there leaves the tree
 dirty, which silently stops both `git pull --ff-only` and the in-app update
-button. `docs/MAINTAINING.md` covers the whole workflow; `CLAUDE.md` is the
-briefing for Claude Code.
+button. `docs/MAINTAINING.md` covers the whole workflow, `docs/HANDOFF.md` is the
+one-time setup checklist, and `CLAUDE.md` is the briefing for Claude Code.
 
 ## Use
 

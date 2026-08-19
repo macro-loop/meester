@@ -4,6 +4,9 @@ This is the *maintainer's* manual — how to change the tool. `GUIDE.md` is the
 other half: how to use it day to day. You don't need this one to run your job
 search. You need it when you want the tool to do something different.
 
+Setting all this up in the first place is a separate, one-time checklist:
+**`docs/HANDOFF.md`**. If the two folders below don't exist yet, start there.
+
 You do not need to be able to write code. You describe the change, Claude makes
 it, the safety checks run, and you push. The checks are real: several of them
 exist specifically to stop a bad change from reaching your laptop.
