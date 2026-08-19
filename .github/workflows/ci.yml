@@ -1,0 +1,65 @@
+# A second pair of eyes, after the fact.
+#
+# scripts/githooks/pre-push is the real gate - it stops a bad change before it
+# ever leaves the machine. This workflow exists for the two cases the hook
+# cannot cover:
+#
+#   1. Edits made through GitHub's web UI, which run no hook at all.
+#   2. Any clone where `git config core.hooksPath scripts/githooks` was never
+#      set, since that setting does not travel with a clone.
+#
+# Deliberately NOT a required status check: a required check that is broken or
+# slow blocks an emergency fix, which is exactly when you cannot afford it.
+name: checks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the floor setup_mac.sh accepts, so her laptop may be on it.
+        # 3.12 is what `brew install python@3.12` gives.
+        python-version: ["3.9", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # The check that matters most. Broken Python self-heals on the next pull;
+      # a bash syntax error kills the shell before it reaches the git pull, and
+      # the laptop is stranded until someone physically touches it.
+      - name: Shell scripts must parse
+        run: |
+          for f in scripts/*.sh scripts/githooks/*; do
+            [ -f "$f" ] || continue
+            bash -n "$f"
+          done
+
+      # This repo is public and a push cannot be undone, so by the time this
+      # runs the damage is already done. It is here to make sure the damage is
+      # noticed immediately rather than in six months.
+      - name: No personal data may be tracked
+        run: |
+          LEAKED="$(git ls-files | grep -Ev '^profile/(README\.md|preferences\.example\.yaml)$' | grep -Ei '^profile/|resume|cv[-_.]|curriculum.?vitae|\.docx?$|\.pdf$' || true)"
+          if [ -n "$LEAKED" ]; then
+            echo "::error::personal files are tracked in a PUBLIC repo:"
+            echo "$LEAKED"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Tests
+        run: python -m pytest tests/ -q
