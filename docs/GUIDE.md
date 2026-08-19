@@ -34,8 +34,8 @@ and restarts itself if it ever stops. Nothing to launch, ever.
 > **Tip:** open that address in Safari, then **File → Add to Dock**. You get a
 > proper app icon that opens the live version directly.
 
-**On your phone**, open the Tailscale address (it ends in `.ts.net` — William
-has it). Works from anywhere, as long as your Mac is awake — lid open, or
+**On your phone**, open the Tailscale address (it ends in `.ts.net`; run
+`tailscale serve status` on your Mac to see it). Works from anywhere, as long as your Mac is awake — lid open, or
 plugged in with sleep prevented. On iPhone: open it in Safari, then
 **Share → Add to Home Screen** for an app icon.
 
@@ -140,7 +140,9 @@ on applications.
 
 ### The AI key
 
-With a key entered (William handles this), matches get the fit % and evidence.
+With a key entered, matches get the fit % and evidence. The key comes from
+your own Anthropic account and you paste it in here yourself — see
+`docs/MAINTAINING.md`.
 Without it, matching still works — you just get the plain reasons alone.
 
 ---
@@ -239,7 +241,7 @@ Cards nobody touches for 48 hours quietly expire, so the queue never silts up.
 There's also a daily submission cap, so it can never firehose applications in
 your name.
 
-### Two settings William can flip for you
+### Two settings you can flip
 
 - **Auto-propose:** strong matches queue *themselves* as drafts each hour, so
   you wake up to cards waiting for review instead of clicking Queue yourself.
@@ -248,11 +250,14 @@ your name.
   everything trustworthy, approving can become automatic for strong matches.
   That's a decision for later, together.
 
+Both live in `config/settings.local.yaml` on your Mac. Open the dev folder and
+ask Claude to set them — `docs/MAINTAINING.md` has the steps.
+
 ---
 
 ## 8. After you apply — the mail loop
 
-*(This part switches on once Gmail is connected — William's department.)*
+*(This part switches on once Gmail is connected — see `docs/GOOGLE_SETUP.md`.)*
 
 A one-time Gmail filter labels job-search mail (application confirmations,
 recruiter replies) with a **JobSearch** label. The tool reads **only** mail
@@ -322,7 +327,7 @@ quality-only.
 Make an empty file named `PAUSED` (no extension) in the **Meester** folder in
 your home folder — everything stops: no harvests, no submissions, no mail
 reading. Delete the file to resume. No terminal needed — you can do it in
-Finder. Or just ask William.
+Finder.
 
 ---
 
@@ -335,8 +340,21 @@ Finder. Or just ask William.
 - **Phone link dead?** Your Mac is asleep. Open the lid.
 - **No fit percentages?** Usually the CV isn't saved-and-verified yet, or the
   AI key is missing — both live on Profile / Your CV.
-- **Anything else** — tell William. There's a built-in checkup (`meester
-  doctor`) that reports exactly what's working, so most fixes are quick.
+- **Anything else** — there's a built-in checkup (`meester doctor`) that
+  reports exactly what's working, so most fixes are quick. Run it, then open
+  the dev folder and ask Claude. `docs/MAINTAINING.md` has the steps.
+
+---
+
+## Changing the tool itself
+
+This manual covers *using* it. Changing it — adding a feature, fixing something,
+adjusting how matches are scored — is a separate manual: **`docs/MAINTAINING.md`**.
+You don't need to write code for that; you describe what you want and Claude makes
+the change in your `~/meester-dev` folder. The one rule is that the editing
+happens there, never in the folder that runs your job search.
+
+---
 
 One last thing worth knowing: everything the tool ever does in your name
 leaves a record on your Mac — every submission, every screenshot, every note.

@@ -35,9 +35,25 @@ live-data bugs the classifier guards against.
 
 ## Setup
 
+**Editing copy** (a Mac, separate from the one that runs it):
+
 ```bash
-python -m pip install -r requirements.txt
+git clone https://github.com/macro-loop/meester.git ~/meester-dev
+cd ~/meester-dev && ./scripts/setup_dev.sh
 ```
+
+That builds the venv, installs pytest, turns on the pre-push gate and proves the
+tests run. It deliberately installs no scheduled job and no browser.
+
+**The machine that runs it** uses `scripts/setup_mac.sh` instead — see
+`INSTALL.md`. Both scripts refuse to run in the other one's folder: a dev clone
+that installed the launchd agents would silently repoint the live job search at a
+checkout with no `profile/` and no `data/`.
+
+Never edit the folder the scheduled job runs from. Any edit there leaves the tree
+dirty, which silently stops both `git pull --ff-only` and the in-app update
+button. `docs/MAINTAINING.md` covers the whole workflow; `CLAUDE.md` is the
+briefing for Claude Code.
 
 ## Use
 
@@ -122,7 +138,8 @@ freshness and buys the right execution environment for everything downstream.
 
 ## Pushing updates
 
-Enable the pre-push hook once, on your machine:
+`scripts/setup_dev.sh` enables the pre-push hook for you. To turn it on in a
+clone that predates it:
 
 ```bash
 git config core.hooksPath scripts/githooks
@@ -138,16 +155,23 @@ Her Mac runs `git pull --ff-only` before every harvest, so the change lands on
 her next run — within the hour if the laptop is awake, otherwise on next wake.
 She does nothing.
 
-**There is no CI and no staging.** Whatever reaches `master` executes unattended
-on her laptop within the hour. The pre-push hook is the only gate, and it checks
-two things:
+**There is no staging.** Whatever reaches `master` executes unattended on her
+laptop within the hour. The pre-push hook is the gate that runs *before* a change
+leaves the machine, and it checks three things:
 
 1. **Every shell script parses.** This matters more than the tests. Broken Python
    self-heals — the next run pulls the fix *before* executing it. A broken
    `run_harvest.sh` does not: bash dies before reaching the `git pull`, so her Mac
    is stranded until someone physically touches it. Treat `scripts/*.sh` as the
    dangerous files.
-2. **The tests pass.**
+2. **No personal file is tracked.** The repo is public and a push cannot be
+   undone.
+3. **The tests pass.**
+
+GitHub Actions (`.github/workflows/ci.yml`) re-runs all three after the push, to
+catch the two cases the hook cannot see: edits made through GitHub's web UI, and
+clones where `core.hooksPath` was never set. It is deliberately not a required
+check — a broken required check blocks the emergency fix.
 
 Override with `git push --no-verify` only when you genuinely mean it.
 

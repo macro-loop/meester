@@ -1,4 +1,8 @@
-# Wiring Clay for warm outreach (William, ~30 minutes, one-time)
+# Wiring Clay for warm outreach (one-time, ~30 minutes)
+
+> The Clay workspace this uses is William's, and it stays his. If outreach needs
+> changing, that is the one thing to ask him for. Everything else in this repo
+> you can change yourself — see `docs/MAINTAINING.md`.
 
 Her Mac can't reach your Clay workspace directly — Clay has no readable API
 outside Enterprise. The supported shape is **webhook in → enrich → export out**,
@@ -67,8 +71,9 @@ stays cheap.
 
 ## 4. Tell her Mac
 
-In `~/Meester/config/settings.yaml` on her machine (edit + push, or edit
-locally), fill in:
+In `~/Meester/config/settings.local.yaml` on her machine — **not** the tracked
+`settings.yaml`, which must stay untouched there or every future update that
+touches it stops applying. Create the file if it doesn't exist and fill in:
 
 ```yaml
 outreach:
